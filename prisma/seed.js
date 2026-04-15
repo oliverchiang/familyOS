@@ -14,11 +14,11 @@ async function main() {
   });
 
   const kid1 = await prisma.familyMember.create({
-    data: { name: "Alex", role: "KID", avatar: "🧒" },
+    data: { name: "Tyler", role: "KID", avatar: "🧒" },
   });
 
   const kid2 = await prisma.familyMember.create({
-    data: { name: "Sam", role: "KID", avatar: "👧" },
+    data: { name: "Riley", role: "KID", avatar: "👧" },
   });
 
   await prisma.reward.createMany({
@@ -38,8 +38,8 @@ async function main() {
       { kidId: kid1.id, title: "Practice drums", emoji: "🥁", durationMins: 15, date: today, order: 0, points: 15 },
       { kidId: kid1.id, title: "Read a book", emoji: "📚", durationMins: 20, date: today, order: 1, points: 20 },
       { kidId: kid1.id, title: "Tidy bedroom", emoji: "🛏️", durationMins: 10, date: today, order: 2, points: 10 },
-      { kidId: kid2.id, title: "Piano practice", emoji: "🎹", durationMins: 20, date: today, order: 0, points: 20 },
-      { kidId: kid2.id, title: "Homework", emoji: "✏️", durationMins: 30, date: today, order: 1, points: 30 },
+      { kidId: kid2.id, title: "Guitar practice", emoji: "🎸", durationMins: 20, date: today, order: 0, points: 20 },
+      { kidId: kid2.id, title: "Timestable", emoji: "✖️", durationMins: 30, date: today, order: 1, points: 30 },
     ],
   });
 
