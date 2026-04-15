@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model FamilyMember {
+  id        String   @id @default(cuid())
+  name      String
+  role      String   // KID or PARENT
+  avatar    String   @default("👤")
+  createdAt DateTime @default(now())
+
+  tasks        Task[]
+  rewardClaims RewardClaim[]
+}
+
+model Task {
+  id           String   @id @default(cuid())
+  title        String
+  emoji        String   @default("✅")
+  durationMins Int
+  status       String   @default("PLANNED") // PLANNED, DONE, APPROVED
+  date         String   // YYYY-MM-DD
+  order        Int      @default(0)
+  points       Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  kidId String
+  kid   FamilyMember @relation(fields: [kidId], references: [id])
+
+  video Video?
+}
+
+model Video {
+  id        String   @id @default(cuid())
+  filePath  String
+  createdAt DateTime @default(now())
+
+  taskId String @unique
+  task   Task   @relation(fields: [taskId], references: [id])
+}
+
+model Reward {
+  id         String   @id @default(cuid())
+  title      String
+  emoji      String   @default("🎁")
+  pointsCost Int
+  createdAt  DateTime @default(now())
+
+  claims RewardClaim[]
+}
+
+model RewardClaim {
+  id        String   @id @default(cuid())
+  claimedAt DateTime @default(now())
+
+  kidId    String
+  kid      FamilyMember @relation(fields: [kidId], references: [id])
+  rewardId String
+  reward   Reward       @relation(fields: [rewardId], references: [id])
+}
