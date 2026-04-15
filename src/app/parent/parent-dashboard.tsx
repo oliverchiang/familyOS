@@ -17,7 +17,7 @@ type Task = {
 };
 type Claim = {
   id: string;
-  claimedAt: string;
+  claimedAt: Date | string;
   kid: Kid;
   reward: { title: string; emoji: string; pointsCost: number };
 };
