@@ -75,7 +75,10 @@ export default function KidPlanner({
   const [showRewards, setShowRewards] = useState(false);
   const [uploading, setUploading] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mimeTypeRef = useRef<string>("video/webm");
   const chunksRef = useRef<Blob[]>([]);
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -126,23 +129,29 @@ export default function KidPlanner({
   };
 
   const startRecording = useCallback(async (taskId: string) => {
+    setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user" },
         audio: true,
       });
       streamRef.current = stream;
-      setRecording(taskId);
 
-      if (videoPreviewRef.current) {
-        videoPreviewRef.current.srcObject = stream;
+      // Detect best supported mime type (Safari only supports mp4)
+      let mimeType = "";
+      if (MediaRecorder.isTypeSupported("video/webm;codecs=vp9")) {
+        mimeType = "video/webm;codecs=vp9";
+      } else if (MediaRecorder.isTypeSupported("video/webm")) {
+        mimeType = "video/webm";
+      } else if (MediaRecorder.isTypeSupported("video/mp4")) {
+        mimeType = "video/mp4";
       }
 
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-          ? "video/webm;codecs=vp9"
-          : "video/webm",
-      });
+      const options: MediaRecorderOptions = {};
+      if (mimeType) options.mimeType = mimeType;
+      mimeTypeRef.current = mimeType || "video/webm";
+
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
@@ -151,8 +160,19 @@ export default function KidPlanner({
       };
 
       mediaRecorder.start(1000);
-    } catch {
-      alert("Could not access camera. Please allow camera permissions.");
+      setRecording(taskId);
+
+      if (videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      const msg =
+        err instanceof DOMException && err.name === "NotAllowedError"
+          ? "Camera permission denied. Please allow camera access in your browser settings."
+          : "Could not start recording. Your browser may not support video recording.";
+      setError(msg);
     }
   }, []);
 
@@ -160,52 +180,91 @@ export default function KidPlanner({
     if (!mediaRecorderRef.current || !recording) return;
 
     setUploading(true);
+    setError(null);
 
-    return new Promise<void>((resolve) => {
-      mediaRecorderRef.current!.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: "video/webm" });
-        await uploadVideo(blob, recording);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("Recording stop timed out")), 10000);
 
-        streamRef.current?.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-        setRecording(null);
-        setUploading(false);
-        router.refresh();
-        resolve();
-      };
-      mediaRecorderRef.current!.stop();
-    });
+        mediaRecorderRef.current!.onstop = async () => {
+          clearTimeout(timeout);
+          try {
+            const mimeType = mimeTypeRef.current;
+            const ext = mimeType.includes("mp4") ? "mp4" : "webm";
+            const blob = new Blob(chunksRef.current, { type: mimeType });
+            await uploadVideo(blob, recording, ext);
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
+        };
+        mediaRecorderRef.current!.stop();
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed. Please try again.");
+    } finally {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      setRecording(null);
+      setUploading(false);
+      router.refresh();
+    }
   }, [recording, router]);
 
-  const uploadVideo = async (blob: Blob, taskId: string) => {
+  const uploadVideo = async (blob: Blob, taskId: string, ext: string) => {
     const formData = new FormData();
-    formData.append("video", blob, "recording.webm");
+    formData.append("video", blob, `recording.${ext}`);
     formData.append("taskId", taskId);
-    await fetch("/api/upload", { method: "POST", body: formData });
+    const res = await fetch("/api/upload", { method: "POST", body: formData });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Upload failed");
+    }
   };
 
   const handleFileUpload = async (taskId: string, file: File) => {
+    setError(null);
+
+    if (file.size > 50 * 1024 * 1024) {
+      setError("Video is too large. Maximum size is 50MB.");
+      return;
+    }
+
     setUploading(true);
-    const formData = new FormData();
-    formData.append("video", file);
-    formData.append("taskId", taskId);
-    await fetch("/api/upload", { method: "POST", body: formData });
-    setUploading(false);
-    router.refresh();
+    try {
+      const formData = new FormData();
+      formData.append("video", file);
+      formData.append("taskId", taskId);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Upload failed");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed. Please try again.");
+    } finally {
+      setUploading(false);
+      router.refresh();
+    }
   };
 
   const claimReward = async (rewardId: string) => {
-    const res = await fetch("/api/rewards/claim", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kidId, rewardId }),
-    });
-    if (res.ok) {
-      router.refresh();
-      setShowRewards(false);
-    } else {
-      const err = await res.json();
-      alert(err.error || "Could not claim reward");
+    setError(null);
+    try {
+      const res = await fetch("/api/rewards/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kidId, rewardId }),
+      });
+      if (res.ok) {
+        router.refresh();
+        setShowRewards(false);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Could not claim reward");
+      }
+    } catch {
+      setError("Something went wrong. Please try again.");
     }
   };
 
@@ -214,6 +273,20 @@ export default function KidPlanner({
 
   return (
     <div className="space-y-5 md:space-y-6">
+      {/* Error banner */}
+      {error && (
+        <div className="bg-red-500/15 border border-red-500/30 text-red-400 rounded-2xl p-4 flex items-center gap-3">
+          <span className="text-xl">⚠️</span>
+          <span className="flex-1 text-sm md:text-base">{error}</span>
+          <button
+            onClick={() => setError(null)}
+            className="text-red-400/60 hover:text-red-400 text-lg"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Week strip date picker */}
       <div className="glass rounded-2xl md:rounded-3xl p-4 md:p-5">
         <div className="flex items-center justify-between mb-3">
@@ -386,7 +459,6 @@ export default function KidPlanner({
                       <input
                         type="file"
                         accept="video/*"
-                        capture="user"
                         className="hidden"
                         onChange={(e) => {
                           const f = e.target.files?.[0];

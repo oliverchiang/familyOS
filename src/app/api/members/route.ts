@@ -2,23 +2,37 @@ import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(req: NextRequest) {
-  const role = req.nextUrl.searchParams.get("role");
+  try {
+    const role = req.nextUrl.searchParams.get("role");
 
-  const members = await prisma.familyMember.findMany({
-    where: role ? { role } : {},
-    orderBy: { name: "asc" },
-  });
+    const members = await prisma.familyMember.findMany({
+      where: role ? { role } : {},
+      orderBy: { name: "asc" },
+    });
 
-  return NextResponse.json(members);
+    return NextResponse.json(members);
+  } catch (error) {
+    console.error("GET /api/members error:", error);
+    return NextResponse.json({ error: "Failed to fetch members" }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { name, role, avatar } = body;
+  try {
+    const body = await req.json();
+    const { name, role, avatar } = body;
 
-  const member = await prisma.familyMember.create({
-    data: { name, role, avatar: avatar || "👤" },
-  });
+    if (!name || !role) {
+      return NextResponse.json({ error: "name and role are required" }, { status: 400 });
+    }
 
-  return NextResponse.json(member);
+    const member = await prisma.familyMember.create({
+      data: { name, role, avatar: avatar || "👤" },
+    });
+
+    return NextResponse.json(member);
+  } catch (error) {
+    console.error("POST /api/members error:", error);
+    return NextResponse.json({ error: "Failed to create member" }, { status: 500 });
+  }
 }
