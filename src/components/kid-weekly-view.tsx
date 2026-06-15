@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useOptimistic, useTransition } from "react";
+import { logCompletion } from "@/app/actions";
 import { cn } from "@/lib/cn";
 import { isComplete, minutesGained, type KidWeek, type Task } from "@/lib/types";
 import { ArrowRight } from "./icons";
@@ -8,19 +9,24 @@ import { MinutesSummary } from "./minutes-summary";
 import { TaskRow } from "./task-row";
 import { WeekHeader } from "./week-header";
 
-export function KidWeeklyView({ initialWeek }: { initialWeek: KidWeek }) {
-  const [tasks, setTasks] = useState<Task[]>(initialWeek.tasks);
+export function KidWeeklyView({ week }: { week: KidWeek }) {
+  const [, startTransition] = useTransition();
 
-  const gained = useMemo(() => minutesGained(tasks), [tasks]);
+  // Optimistically advance a task's progress so taps feel instant; the server
+  // action persists it and revalidates, resetting this to the real data.
+  const [tasks, bumpTask] = useOptimistic(week.tasks, (current: Task[], taskId: string) =>
+    current.map((t) =>
+      t.id === taskId && !isComplete(t) ? { ...t, done: t.done + 1 } : t,
+    ),
+  );
+
+  const gained = minutesGained(tasks);
 
   function handleDidIt(taskId: string) {
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === taskId && !isComplete(t)
-          ? { ...t, done: Math.min(t.target, t.done + 1) }
-          : t,
-      ),
-    );
+    startTransition(async () => {
+      bumpTask(taskId);
+      await logCompletion(taskId);
+    });
   }
 
   return (
@@ -33,23 +39,18 @@ export function KidWeeklyView({ initialWeek }: { initialWeek: KidWeek }) {
         )}
       >
         <WeekHeader
-          week={initialWeek}
+          week={week}
           onPrevWeek={() => {
-            /* Multi-week navigation arrives with the data layer. */
+            /* Multi-week navigation arrives with week history. */
           }}
           onNextWeek={() => {
-            /* Multi-week navigation arrives with the data layer. */
+            /* Multi-week navigation arrives with week history. */
           }}
         />
 
-        {/* Full-width divider between header and body */}
         <div className="h-px bg-ink/85" />
 
-        <MinutesSummary
-          gained={gained}
-          capMins={initialWeek.weeklyCapMins}
-          pulseKey={gained}
-        />
+        <MinutesSummary gained={gained} capMins={week.weeklyCapMins} pulseKey={gained} />
 
         <section className="px-6 pt-7">
           <h2 className="text-xs font-bold uppercase tracking-[0.18em] text-muted">

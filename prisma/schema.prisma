@@ -1,0 +1,102 @@
+// FamilyOS v2 — weekly screen-time economy.
+// See docs/PRD.md for the model rationale.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PARENT
+  KID
+}
+
+enum TaskDisplay {
+  TALLY // discrete sessions, shown as filled squares (e.g. instrument practice)
+  BAR // progress toward a goal, shown as a bar (e.g. homework)
+}
+
+enum LedgerType {
+  EARN // target hit → lump-sum minutes
+  REDEEM // screen time used
+  ADJUST // manual parent correction
+}
+
+model FamilyMember {
+  id            String   @id @default(cuid())
+  name          String
+  role          Role
+  avatar        String   @default("🙂")
+  order         Int      @default(0)
+  weeklyCapMins Int      @default(120)
+  createdAt     DateTime @default(now())
+
+  tasks       Task[]
+  completions Completion[]
+  ledger      LedgerEntry[]
+}
+
+model Task {
+  id          String      @id @default(cuid())
+  title       String
+  icon        String // frontend IconName: drums | guitar | book | pencil
+  tile        String // frontend TileColor: drums | book | maths
+  display     TaskDisplay
+  targetCount Int // sessions (tally) or steps (bar) to hit the weekly target
+  rewardMins  Int // minutes awarded once the target is met
+  order       Int         @default(0)
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+
+  kidId String
+  kid   FamilyMember @relation(fields: [kidId], references: [id], onDelete: Cascade)
+
+  completions Completion[]
+  ledger      LedgerEntry[]
+
+  @@index([kidId])
+}
+
+model Completion {
+  id        String   @id @default(cuid())
+  weekStart String // ISO date (YYYY-MM-DD) of the week's Monday
+  // Interim default: counts immediately. Flips to false (pending) once the
+  // parent-approval dashboard exists — see docs/PRD.md open questions.
+  approved  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  kidId  String
+  kid    FamilyMember @relation(fields: [kidId], references: [id], onDelete: Cascade)
+
+  @@index([kidId, weekStart])
+  @@index([taskId, weekStart])
+}
+
+model LedgerEntry {
+  id        String     @id @default(cuid())
+  weekStart String
+  type      LedgerType
+  minutes   Int // signed: + earn, - redeem, ± adjust
+  note      String?
+  createdAt DateTime   @default(now())
+
+  kidId String
+  kid   FamilyMember @relation(fields: [kidId], references: [id], onDelete: Cascade)
+
+  // Set for EARN entries so a target's reward is granted at most once per week.
+  taskId String?
+  task   Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([kidId, weekStart])
+}
+
+model Setting {
+  key   String @id
+  value String
+}
