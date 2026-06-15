@@ -166,7 +166,13 @@ export async function getKidWeekView(
   const now = new Date();
   const currentWeekStart = weekStartISO(now, tz);
   const todayISO = localISODate(now, tz);
-  const weekStart = weekStartParam || currentWeekStart;
+
+  // Snap any valid ?week= date to its Monday; ignore malformed input.
+  let weekStart = currentWeekStart;
+  if (weekStartParam && /^\d{4}-\d{2}-\d{2}$/.test(weekStartParam)) {
+    const parsed = new Date(`${weekStartParam}T12:00:00Z`);
+    if (!Number.isNaN(parsed.getTime())) weekStart = weekStartISO(parsed, tz);
+  }
 
   const kid = await prisma.familyMember.findUnique({ where: { id: kidId } });
   if (!kid || kid.role !== "KID") return null;
@@ -185,22 +191,22 @@ export async function getFamilyOverview(): Promise<ProfileSummary[]> {
     where: { weekStart: cws, status: "PENDING", kid: { role: "KID" } },
   });
 
-  const profiles: ProfileSummary[] = [];
-  for (const m of members) {
-    if (m.role === "KID") {
-      const w = await assembleKidWeek(m, cws, cws, todayISO, tz);
-      const instrument = w.tasks.find((t) => t.display === "tally");
-      profiles.push({
-        id: m.id,
-        name: m.name,
-        avatarKey: m.avatarKey as AvatarKey,
-        isKid: true,
-        roleLabel: `${instrument?.title ?? "Practice"} · homework`,
-        stat: w.left,
-        statLabel: "mins to use",
-      });
-    } else {
-      profiles.push({
+  return Promise.all(
+    members.map(async (m): Promise<ProfileSummary> => {
+      if (m.role === "KID") {
+        const w = await assembleKidWeek(m, cws, cws, todayISO, tz);
+        const instrument = w.tasks.find((t) => t.display === "tally");
+        return {
+          id: m.id,
+          name: m.name,
+          avatarKey: m.avatarKey as AvatarKey,
+          isKid: true,
+          roleLabel: `${instrument?.title ?? "Practice"} · homework`,
+          stat: w.left,
+          statLabel: "mins to use",
+        };
+      }
+      return {
         id: m.id,
         name: m.name,
         avatarKey: m.avatarKey as AvatarKey,
@@ -208,10 +214,9 @@ export async function getFamilyOverview(): Promise<ProfileSummary[]> {
         roleLabel: "Parent · approves tasks",
         stat: pendingCount,
         statLabel: "to check",
-      });
-    }
-  }
-  return profiles;
+      };
+    }),
+  );
 }
 
 function historyText(type: string, minutes: number, taskTitle?: string | null): string {

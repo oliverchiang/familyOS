@@ -53,7 +53,7 @@ async function logs(
 }
 
 /** Create celebrated EARN entries for any met targets that week (seed-only). */
-async function awardWeek(kidId: string, weekStart: string) {
+async function awardWeek(kidId: string, weekStart: string, createdAt?: Date) {
   const tasks = await prisma.task.findMany({ where: { kidId, active: true } });
   const counts = await prisma.completion.groupBy({
     by: ["taskId"],
@@ -67,7 +67,8 @@ async function awardWeek(kidId: string, weekStart: string) {
   );
   if (toAward.length > 0) {
     await prisma.ledgerEntry.createMany({
-      data: toAward.map((t) => ({ kidId, weekStart, type: "EARN" as const, minutes: t.rewardMins, taskId: t.taskId, note: "Weekly target met", celebrated: true })),
+      data: toAward.map((t) => ({ kidId, weekStart, type: "EARN" as const, minutes: t.rewardMins, taskId: t.taskId, note: "Weekly target met", celebrated: true, ...(createdAt ? { createdAt } : {}) })),
+      skipDuplicates: true,
     });
   }
 }
@@ -105,7 +106,7 @@ async function main() {
     await logs(kid.id, tasks.instr.id, last, 4, "APPROVED", lastDay);
     await logs(kid.id, tasks.chinese.id, last, 5, "APPROVED", lastDay);
     await logs(kid.id, tasks.maths.id, last, 5, "APPROVED", lastDay);
-    await awardWeek(kid.id, last);
+    await awardWeek(kid.id, last, lastDay);
   }
 
   // ---- This week (matches the design state) ----

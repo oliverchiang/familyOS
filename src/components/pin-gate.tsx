@@ -46,7 +46,7 @@ export function PinGate({
   return (
     <div
       onClick={onClose}
-      className="absolute inset-0 z-40 flex items-center justify-center bg-[rgba(26,21,16,0.45)] p-6"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-[rgba(26,21,16,0.45)] p-6"
     >
       <div
         onClick={(e) => e.stopPropagation()}

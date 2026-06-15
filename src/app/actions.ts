@@ -3,14 +3,26 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { syncAwards } from "@/lib/db/awards";
-import { getKidWeekView } from "@/lib/db/queries";
+import { computeLeft, gainedFromTasks } from "@/lib/economy";
 import { prisma } from "@/lib/prisma";
 import { weekStartISO } from "@/lib/week";
 
-// Single-family, no-account prototype. The parent PIN gates the parent view;
-// kid/parent mutations are otherwise unauthenticated by design.
+// Single-family, no-account prototype. The parent PIN gates parent-only
+// mutations server-side (not just the /parent page) so kids can't self-approve
+// by POSTing to the action directly.
 
 const PARENT_COOKIE = "parent_unlocked";
+
+/** Whether the parent view is unlocked this session. */
+export async function isParentUnlocked(): Promise<boolean> {
+  return (await cookies()).get(PARENT_COOKIE)?.value === "1";
+}
+
+async function requireParent(): Promise<void> {
+  if (!(await isParentUnlocked())) {
+    throw new Error("Parent PIN required");
+  }
+}
 
 function revalidateAll(kidId?: string) {
   revalidatePath("/");
@@ -36,6 +48,7 @@ export async function logCompletion(taskId: string): Promise<void> {
 
 /** Parent approves one pending completion; may cross a target and award minutes. */
 export async function approveCompletion(completionId: string): Promise<void> {
+  await requireParent();
   const completion = await prisma.completion.findUnique({ where: { id: completionId } });
   if (!completion || completion.status !== "PENDING") return;
 
@@ -51,6 +64,7 @@ export async function approveCompletion(completionId: string): Promise<void> {
 
 /** Parent rejects one pending completion (discarded). */
 export async function rejectCompletion(completionId: string): Promise<void> {
+  await requireParent();
   const completion = await prisma.completion.findUnique({ where: { id: completionId } });
   if (!completion || completion.status !== "PENDING") return;
 
@@ -61,32 +75,62 @@ export async function rejectCompletion(completionId: string): Promise<void> {
   revalidateAll(completion.kidId);
 }
 
-/** Kid redeems screen time — capped at the minutes left this week. */
+/**
+ * Kid redeems screen time. Recomputes the balance and inserts the REDEEM inside
+ * one transaction so concurrent redeems can't overspend below zero.
+ */
 export async function redeemMinutes(
   kidId: string,
   amountMins: number,
 ): Promise<{ ok: boolean; used: number }> {
-  const view = await getKidWeekView(kidId);
-  if (!view) return { ok: false, used: 0 };
+  const weekStart = weekStartISO(new Date());
 
-  const take = Math.min(amountMins, view.left);
-  if (take <= 0) return { ok: false, used: 0 };
+  const result = await prisma.$transaction(async (tx) => {
+    const [tasks, approvedCounts, ledger] = await Promise.all([
+      tx.task.findMany({
+        where: { kidId, active: true },
+        select: { id: true, targetCount: true, rewardMins: true },
+      }),
+      tx.completion.groupBy({
+        by: ["taskId"],
+        where: { kidId, weekStart, status: "APPROVED" },
+        _count: { _all: true },
+      }),
+      tx.ledgerEntry.findMany({ where: { kidId, weekStart }, select: { type: true, minutes: true } }),
+    ]);
 
-  await prisma.ledgerEntry.create({
-    data: {
-      kidId,
-      weekStart: weekStartISO(new Date()),
-      type: "REDEEM",
-      minutes: -take,
-      note: "Used screen time",
-    },
+    const countByTask = new Map(approvedCounts.map((c) => [c.taskId, c._count._all]));
+    const gained = gainedFromTasks(
+      tasks.map((t) => ({
+        approved: countByTask.get(t.id) ?? 0,
+        target: t.targetCount,
+        reward: t.rewardMins,
+      })),
+    );
+    let redeemed = 0;
+    let adjust = 0;
+    for (const l of ledger) {
+      if (l.type === "REDEEM") redeemed += Math.abs(l.minutes);
+      else if (l.type === "ADJUST") adjust += l.minutes;
+    }
+
+    const left = computeLeft(gained, redeemed, adjust);
+    const take = Math.min(amountMins, left);
+    if (take <= 0) return { ok: false, used: 0 };
+
+    await tx.ledgerEntry.create({
+      data: { kidId, weekStart, type: "REDEEM", minutes: -take, note: "Used screen time" },
+    });
+    return { ok: true, used: take };
   });
+
   revalidateAll(kidId);
-  return { ok: true, used: take };
+  return result;
 }
 
 /** Parent adjusts a kid's minutes (+15 bonus / −15) with a history entry. */
 export async function adjustMinutes(kidId: string, delta: number): Promise<void> {
+  await requireParent();
   await prisma.ledgerEntry.create({
     data: {
       kidId,
@@ -117,12 +161,8 @@ export async function verifyPin(pin: string): Promise<{ ok: boolean }> {
   (await cookies()).set(PARENT_COOKIE, "1", {
     httpOnly: true,
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
   });
   return { ok: true };
-}
-
-/** Whether the parent view is unlocked this session. */
-export async function isParentUnlocked(): Promise<boolean> {
-  return (await cookies()).get(PARENT_COOKIE)?.value === "1";
 }

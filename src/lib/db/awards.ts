@@ -40,6 +40,8 @@ export async function syncAwards(
   );
 
   if (toAward.length > 0) {
+    // skipDuplicates + the @@unique([kidId, weekStart, taskId]) make this safe
+    // under concurrent approvals — a target's reward is granted at most once.
     await prisma.ledgerEntry.createMany({
       data: toAward.map((t) => ({
         kidId,
@@ -50,6 +52,7 @@ export async function syncAwards(
         note: "Weekly target met",
         celebrated: opts.celebrated ?? false,
       })),
+      skipDuplicates: true,
     });
   }
 }

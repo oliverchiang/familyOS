@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { adjustMinutes, approveCompletion, rejectCompletion } from "@/app/actions";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/cn";
 import type { HistoryItem, ParentDeskView, ParentKidSummary, QueueItem } from "@/lib/types";
 import { Avatar, TaskIllustration } from "./illustrations";
@@ -10,6 +11,7 @@ import { Avatar, TaskIllustration } from "./illustrations";
 export function ParentDashboard({ view }: { view: ParentDeskView }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
+  const wide = useMediaQuery("(min-width: 880px)");
 
   const act = (fn: () => Promise<void>) => startTransition(async () => void (await fn()));
 
@@ -89,26 +91,27 @@ export function ParentDashboard({ view }: { view: ParentDeskView }) {
         </span>
       </div>
 
-      {/* wide: two-pane; narrow: single column */}
-      <div className="hidden min-[880px]:flex min-[880px]:min-h-0 min-[880px]:flex-1 min-[880px]:flex-col">
-        <div className="px-8 pt-1.5">{header}</div>
-        <div className="flex min-h-0 flex-1 gap-8 px-8 pb-7 pt-1">
-          <div className="flex-1 overflow-y-auto">
-            {queueSection}
-            {histSection}
-          </div>
-          <div className="flex-1 overflow-y-auto border-l-[1.5px] border-hairline pl-8">
-            {weekSection}
+      {wide ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="px-8 pt-1.5">{header}</div>
+          <div className="flex min-h-0 flex-1 gap-8 px-8 pb-7 pt-1">
+            <div className="flex-1 overflow-y-auto">
+              {queueSection}
+              {histSection}
+            </div>
+            <div className="flex-1 overflow-y-auto border-l-[1.5px] border-hairline pl-8">
+              {weekSection}
+            </div>
           </div>
         </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-[26px] pb-7 pt-1 min-[880px]:hidden">
-        {header}
-        {queueSection}
-        {weekSection}
-        {histSection}
-      </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto px-[26px] pb-7 pt-1">
+          {header}
+          {queueSection}
+          {weekSection}
+          {histSection}
+        </div>
+      )}
     </div>
   );
 }

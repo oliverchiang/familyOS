@@ -102,6 +102,9 @@ model LedgerEntry {
   task   Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
   @@index([kidId, weekStart])
+  // One EARN per task/week (idempotent awards). NULL taskId (REDEEM/ADJUST) is
+  // treated as distinct by Postgres, so those remain unconstrained.
+  @@unique([kidId, weekStart, taskId])
 }
 
 model Setting {

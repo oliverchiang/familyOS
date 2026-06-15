@@ -3,6 +3,7 @@
 import { useOptimistic, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { logCompletion, markCelebrated, redeemMinutes } from "@/app/actions";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/cn";
 import { tallyDots } from "@/lib/economy";
 import type { DayCell, KidWeekView, TaskView } from "@/lib/types";
@@ -14,6 +15,8 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [redeemSel, setRedeemSel] = useState(Math.min(30, view.left) || 15);
   const [celebrated, setCelebrated] = useState(false);
+  // Shared-iPad landscape → split view; portrait/phone → single column.
+  const landscape = useMediaQuery("(min-width: 820px) and (orientation: landscape)");
 
   const [tasks, bumpPending] = useOptimistic(view.tasks, (cur: TaskView[], id: string) =>
     cur.map((t) =>
@@ -53,8 +56,125 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
       ? "text-faint"
       : "text-muted";
 
+  const header = (
+    <div className="flex items-center gap-[13px] px-[26px] pb-3.5 pt-1">
+      <div className="shrink-0">
+        <Avatar who={view.avatarKey} size={46} />
+      </div>
+      <div className="text-[22px] font-bold tracking-[-0.01em]">{view.kidName}</div>
+    </div>
+  );
+
+  const weekPicker = (
+    <div className="flex items-center gap-2 px-[22px] pb-3.5">
+      <NavButton dir="prev" enabled onClick={() => goWeek(view.prevWeekStart)} />
+      <div className="flex-1 text-center">
+        <div className="text-[17px] font-bold tracking-[-0.01em]">{view.meta.label}</div>
+        <div
+          className={cn(
+            "mt-px font-meta text-xs font-extrabold uppercase tracking-[0.04em]",
+            tagColor,
+          )}
+        >
+          {view.meta.tag}
+        </div>
+      </div>
+      <NavButton
+        dir="next"
+        enabled={!view.isFuture}
+        onClick={() => goWeek(view.nextWeekStart)}
+      />
+    </div>
+  );
+
+  const calendar = (
+    <div className="px-[18px] pb-4">
+      <div className="grid grid-cols-7 gap-1 rounded-[14px] bg-tile px-2 py-2.5">
+        {view.days.map((d, i) => (
+          <DayCellEl key={i} cell={d} />
+        ))}
+      </div>
+    </div>
+  );
+
+  const hero = (
+    <div className="border-t-[1.5px] border-ink px-[26px] py-[18px]">
+      <div className="flex items-start gap-3">
+        <span className="text-[84px] font-bold leading-[0.8] tracking-[-0.05em]">
+          {view.gained}
+        </span>
+        <span className="pt-1.5 text-sm font-semibold uppercase leading-[1.2] tracking-[0.08em] text-accent">
+          minutes
+          <br />
+          gained
+        </span>
+      </div>
+      <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-track">
+        <div
+          className="h-full rounded-full bg-accent transition-[width] duration-300 ease-out"
+          style={{ width: `${Math.min(view.gained, view.weeklyCapMins) / view.weeklyCapMins * 100}%` }}
+        />
+      </div>
+      <div className="mt-2 flex justify-between font-meta text-[13px] font-bold text-muted">
+        <span>
+          {view.gained} of {view.weeklyCapMins} mins
+        </span>
+        <span>max {view.weeklyCapMins / 60} hrs / week</span>
+      </div>
+    </div>
+  );
+
+  const taskList = (
+    <div className="px-[26px]">
+      <div className="pt-1 text-xs font-bold uppercase tracking-[0.14em] text-muted">
+        Tasks
+      </div>
+      {tasks.map((t) => (
+        <TaskRow key={t.id} task={t} view={view} onDidIt={didIt} />
+      ))}
+    </div>
+  );
+
+  const footer = (
+    <div className="px-[26px] pb-7 pt-5">
+      {view.isCurrent ? (
+        <div>
+          <button
+            type="button"
+            onClick={() => {
+              setRedeemSel(Math.min(30, view.left) || 15);
+              setRedeemOpen(true);
+            }}
+            className="h-[54px] w-full rounded-[10px] bg-accent text-base font-bold text-white transition-transform active:scale-[0.99]"
+          >
+            Use screen time →
+          </button>
+          <div className="mt-2.5 text-center font-meta text-[13px] font-bold text-muted">
+            {view.left} mins left to use this week
+          </div>
+        </div>
+      ) : (
+        <div
+          className={cn(
+            "py-2 text-center font-meta text-sm font-extrabold",
+            view.isFuture ? "text-faint" : "text-muted",
+          )}
+        >
+          {view.isFuture
+            ? "This week hasn’t started yet"
+            : `Week finished · ${view.gained} mins gained`}
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <div className="relative mx-auto flex h-dvh w-full max-w-none flex-col overflow-hidden bg-paper min-[880px]:max-w-[640px]">
+    <div
+      className={cn(
+        "relative mx-auto flex h-dvh w-full flex-col overflow-hidden bg-paper",
+        landscape ? "max-w-[1180px]" : "max-w-[640px]",
+      )}
+    >
       {/* top bar */}
       <div className="flex items-center gap-3 px-[22px] pb-3.5 pt-5">
         <button
@@ -70,115 +190,27 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {/* header */}
-        <div className="flex items-center gap-[13px] px-[26px] pb-3.5 pt-1">
-          <div className="shrink-0">
-            <Avatar who={view.avatarKey} size={46} />
+      {landscape ? (
+        <div className="flex min-h-0 flex-1">
+          <div className="shrink-0 grow-0 basis-[47%] overflow-y-auto border-r-[1.5px] border-hairline">
+            {header}
+            {weekPicker}
+            {calendar}
+            {hero}
+            {footer}
           </div>
-          <div className="text-[22px] font-bold tracking-[-0.01em]">{view.kidName}</div>
+          <div className="flex-1 overflow-y-auto">{taskList}</div>
         </div>
-
-        {/* week picker */}
-        <div className="flex items-center gap-2 px-[22px] pb-3.5">
-          <NavButton dir="prev" enabled onClick={() => goWeek(view.prevWeekStart)} />
-          <div className="flex-1 text-center">
-            <div className="text-[17px] font-bold tracking-[-0.01em]">
-              {view.meta.label}
-            </div>
-            <div
-              className={cn(
-                "mt-px font-meta text-xs font-extrabold uppercase tracking-[0.04em]",
-                tagColor,
-              )}
-            >
-              {view.meta.tag}
-            </div>
-          </div>
-          <NavButton
-            dir="next"
-            enabled={!view.isFuture}
-            onClick={() => goWeek(view.nextWeekStart)}
-          />
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          {header}
+          {weekPicker}
+          {calendar}
+          {hero}
+          {taskList}
+          {footer}
         </div>
-
-        {/* calendar */}
-        <div className="px-[18px] pb-4">
-          <div className="grid grid-cols-7 gap-1 rounded-[14px] bg-tile px-2 py-2.5">
-            {view.days.map((d, i) => (
-              <DayCellEl key={i} cell={d} />
-            ))}
-          </div>
-        </div>
-
-        {/* hero */}
-        <div className="border-t-[1.5px] border-ink px-[26px] py-[18px]">
-          <div className="flex items-start gap-3">
-            <span className="text-[84px] font-bold leading-[0.8] tracking-[-0.05em]">
-              {view.gained}
-            </span>
-            <span className="pt-1.5 text-sm font-semibold uppercase leading-[1.2] tracking-[0.08em] text-accent">
-              minutes
-              <br />
-              gained
-            </span>
-          </div>
-          <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-track">
-            <div
-              className="h-full rounded-full bg-accent transition-[width] duration-300 ease-out"
-              style={{ width: `${Math.min(view.gained, view.weeklyCapMins) / view.weeklyCapMins * 100}%` }}
-            />
-          </div>
-          <div className="mt-2 flex justify-between font-meta text-[13px] font-bold text-muted">
-            <span>
-              {view.gained} of {view.weeklyCapMins} mins
-            </span>
-            <span>max {view.weeklyCapMins / 60} hrs / week</span>
-          </div>
-        </div>
-
-        {/* tasks */}
-        <div className="px-[26px]">
-          <div className="text-xs font-bold uppercase tracking-[0.14em] text-muted">
-            Tasks
-          </div>
-          {tasks.map((t) => (
-            <TaskRow key={t.id} task={t} view={view} onDidIt={didIt} />
-          ))}
-        </div>
-
-        {/* footer */}
-        <div className="px-[26px] pb-7 pt-5">
-          {view.isCurrent ? (
-            <div>
-              <button
-                type="button"
-                onClick={() => {
-                  setRedeemSel(Math.min(30, view.left) || 15);
-                  setRedeemOpen(true);
-                }}
-                className="h-[54px] w-full rounded-[10px] bg-accent text-base font-bold text-white transition-transform active:scale-[0.99]"
-              >
-                Use screen time →
-              </button>
-              <div className="mt-2.5 text-center font-meta text-[13px] font-bold text-muted">
-                {view.left} mins left to use this week
-              </div>
-            </div>
-          ) : (
-            <div
-              className={cn(
-                "py-2 text-center font-meta text-sm font-extrabold",
-                view.isFuture ? "text-faint" : "text-muted",
-              )}
-            >
-              {view.isFuture
-                ? "This week hasn’t started yet"
-                : `Week finished · ${view.gained} mins gained`}
-            </div>
-          )}
-        </div>
-      </div>
+      )}
 
       {redeemOpen && (
         <RedeemSheet
@@ -371,11 +403,11 @@ function RedeemSheet({
   return (
     <div
       onClick={onClose}
-      className="absolute inset-0 z-30 flex items-end bg-[rgba(26,21,16,0.4)]"
+      className="fixed inset-0 z-30 flex items-end justify-center bg-[rgba(26,21,16,0.4)]"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full rounded-t-[22px] bg-paper px-[26px] pb-[30px] pt-6 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]"
+        className="w-full max-w-[640px] rounded-t-[22px] bg-paper px-[26px] pb-[30px] pt-6 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]"
       >
         <div className="text-xl font-bold tracking-[-0.01em]">Use screen time</div>
         <div className="mb-4 mt-0.5 font-meta text-[13px] font-bold text-muted">
@@ -468,7 +500,7 @@ function Celebration({
   return (
     <div
       onClick={onDismiss}
-      className="absolute inset-0 z-40 flex items-center justify-center overflow-hidden"
+      className="fixed inset-0 z-40 flex items-center justify-center overflow-hidden"
       style={{ background: "linear-gradient(160deg,#E8503AF2,#E8503AE0)" }}
     >
       <div className="pointer-events-none absolute inset-0">{confetti}</div>
