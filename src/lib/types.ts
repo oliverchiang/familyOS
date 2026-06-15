@@ -1,54 +1,128 @@
-// Domain types for the kid's weekly view.
-// Mirrors the PRD economy model: weekly task targets that award screen-time
-// minutes as a lump sum once the target is hit.
+// Domain + view types for the "Editorial" FamilyOS app.
 
-export type IconName = "drums" | "guitar" | "book" | "pencil";
-export type TileColor = "drums" | "book" | "maths";
-
-/** How a task's weekly progress is shown to the kid. */
+export type TaskKind = "drum" | "guitar" | "book" | "pencil";
 export type TaskDisplay = "tally" | "bar";
+export type AvatarKey = "tyler" | "riley" | "mum";
 
-export interface Task {
+/** A week's position relative to the current week. */
+export type WeekState = "past" | "current" | "future";
+
+/** Visual state of a day cell in the calendar strip. */
+export type DayState = "muted" | "none" | "ahead" | "done" | "today" | "todayDone";
+
+/** State of one tally square. */
+export type TallyDot = "on" | "pend" | "off";
+
+export const WEEKLY_CAP_MINS = 120;
+
+// ---- Kid dashboard ----
+
+export interface TaskView {
   id: string;
   title: string;
-  icon: IconName;
-  tile: TileColor;
+  kind: TaskKind;
   display: TaskDisplay;
-  /** Sessions to log (tally) or steps to fill (bar) to hit the weekly target. */
   target: number;
-  /** Approved progress so far this week. */
-  done: number;
-  /** Minutes awarded once `done` reaches `target` (per-target-hit, lump sum). */
-  rewardMins: number;
+  reward: number;
+  approved: number;
+  pending: number;
+  earned: boolean;
+  dots: TallyDot[];
+  barPct: number; // 0–100
 }
 
-export interface WeekDay {
-  /** Single-letter weekday label, e.g. "M". */
-  label: string;
-  /** Day of month, e.g. 15. */
-  date: number;
-  /** Whether the kid logged any activity that day (shows a dot). */
-  active: boolean;
-  isToday: boolean;
+export interface DayCell {
+  w: string; // weekday letter
+  n: number; // day of month
+  st: DayState;
 }
 
-export interface KidWeek {
+export interface WeekMeta {
+  weekStart: string; // ISO Monday
+  label: string; // "Jun 15 – 21"
+  tag: string; // "This week" | "Last week" | "Next week" | "Earlier" | "Upcoming"
+  state: WeekState;
+}
+
+export interface Celebration {
+  ledgerId: string;
+  who: string;
+  mins: number;
+  task: string;
+}
+
+export interface KidWeekView {
+  kidId: string;
   kidName: string;
-  /** Human label for the week, e.g. "Jun 15 – 21". */
-  weekLabel: string;
-  isCurrentWeek: boolean;
-  days: WeekDay[];
-  /** Weekly screen-time ceiling in minutes (e.g. 120 = 2 hrs). */
+  avatarKey: AvatarKey;
+  meta: WeekMeta;
+  days: DayCell[];
+  tasks: TaskView[];
+  gained: number;
+  left: number;
+  redeemed: number;
   weeklyCapMins: number;
-  tasks: Task[];
+  isCurrent: boolean;
+  isPast: boolean;
+  isFuture: boolean;
+  prevWeekStart: string;
+  nextWeekStart: string;
+  celebration: Celebration | null;
 }
 
-/** A task has hit its weekly target (and therefore earned its minutes). */
-export function isComplete(task: Task): boolean {
-  return task.done >= task.target;
+// ---- Home ----
+
+export interface ProfileSummary {
+  id: string;
+  name: string;
+  avatarKey: AvatarKey;
+  isKid: boolean;
+  roleLabel: string;
+  stat: number;
+  statLabel: string;
 }
 
-/** Total minutes earned this week = sum of rewards for completed targets. */
-export function minutesGained(tasks: Task[]): number {
-  return tasks.reduce((sum, t) => (isComplete(t) ? sum + t.rewardMins : sum), 0);
+// ---- Parent desk ----
+
+export interface QueueItem {
+  completionId: string;
+  kidId: string;
+  kidName: string;
+  taskTitle: string;
+  kind: TaskKind;
+  reward: number;
+}
+
+export interface ParentTaskRow {
+  id: string;
+  title: string;
+  kind: TaskKind;
+  approved: number;
+  target: number;
+  reward: number;
+  earned: boolean;
+  barPct: number;
+}
+
+export interface ParentKidSummary {
+  kidId: string;
+  name: string;
+  avatarKey: AvatarKey;
+  gained: number;
+  tasks: ParentTaskRow[];
+}
+
+export interface HistoryItem {
+  who: string;
+  text: string;
+  mins: number; // signed
+  kind: "earn" | "redeem" | "adjust";
+  time: string;
+}
+
+export interface ParentDeskView {
+  weekLabel: string;
+  queue: QueueItem[];
+  kids: ParentKidSummary[];
+  history: HistoryItem[];
 }

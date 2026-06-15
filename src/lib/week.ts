@@ -2,6 +2,8 @@
 // Weeks run Monday–Sunday, computed in a fixed timezone (default Europe/London)
 // so awards and resets land on the correct local day regardless of server TZ.
 
+import type { DayState, WeekState } from "./types";
+
 export const DEFAULT_TIME_ZONE = "Europe/London";
 
 const MONTHS = [
@@ -45,6 +47,44 @@ export function weekStartISO(date: Date, timeZone: string = DEFAULT_TIME_ZONE): 
   const offsetToMonday = dow === 0 ? 6 : dow - 1;
   day.setUTCDate(day.getUTCDate() - offsetToMonday);
   return toISODate(day);
+}
+
+/** Number of whole weeks between two ISO Monday dates (target − reference). */
+function weekDiff(targetWeekStart: string, currentWeekStart: string): number {
+  const [ty, tm, td] = targetWeekStart.split("-").map(Number);
+  const [cy, cm, cd] = currentWeekStart.split("-").map(Number);
+  const t = Date.UTC(ty, tm - 1, td, 12);
+  const c = Date.UTC(cy, cm - 1, cd, 12);
+  return Math.round((t - c) / (7 * 24 * 60 * 60 * 1000));
+}
+
+/** Classify a week relative to the current week, with a short tag label. */
+export function relativeWeek(
+  targetWeekStart: string,
+  currentWeekStart: string,
+): { state: WeekState; tag: string } {
+  const diff = weekDiff(targetWeekStart, currentWeekStart);
+  if (diff === 0) return { state: "current", tag: "This week" };
+  if (diff === -1) return { state: "past", tag: "Last week" };
+  if (diff === 1) return { state: "future", tag: "Next week" };
+  return diff < 0
+    ? { state: "past", tag: "Earlier" }
+    : { state: "future", tag: "Upcoming" };
+}
+
+/** Visual state for a calendar day cell. `todayIndex` only matters for the current week. */
+export function dayCellState(
+  weekState: WeekState,
+  dayIndex: number,
+  todayIndex: number,
+  hasActivity: boolean,
+): DayState {
+  if (weekState === "future") return "muted";
+  if (weekState === "past") return hasActivity ? "done" : "none";
+  // current week
+  if (dayIndex < todayIndex) return hasActivity ? "done" : "none";
+  if (dayIndex === todayIndex) return hasActivity ? "todayDone" : "today";
+  return "ahead";
 }
 
 /** Human label for a week, e.g. "Jun 15 – 21" or "Jun 29 – Jul 5". */

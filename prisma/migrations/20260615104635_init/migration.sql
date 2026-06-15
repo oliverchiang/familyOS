@@ -5,6 +5,9 @@ CREATE TYPE "Role" AS ENUM ('PARENT', 'KID');
 CREATE TYPE "TaskDisplay" AS ENUM ('TALLY', 'BAR');
 
 -- CreateEnum
+CREATE TYPE "CompletionStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+
+-- CreateEnum
 CREATE TYPE "LedgerType" AS ENUM ('EARN', 'REDEEM', 'ADJUST');
 
 -- CreateTable
@@ -12,7 +15,7 @@ CREATE TABLE "FamilyMember" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "role" "Role" NOT NULL,
-    "avatar" TEXT NOT NULL DEFAULT '🙂',
+    "avatarKey" TEXT NOT NULL,
     "order" INTEGER NOT NULL DEFAULT 0,
     "weeklyCapMins" INTEGER NOT NULL DEFAULT 120,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -24,8 +27,7 @@ CREATE TABLE "FamilyMember" (
 CREATE TABLE "Task" (
     "id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
-    "icon" TEXT NOT NULL,
-    "tile" TEXT NOT NULL,
+    "kind" TEXT NOT NULL,
     "display" "TaskDisplay" NOT NULL,
     "targetCount" INTEGER NOT NULL,
     "rewardMins" INTEGER NOT NULL,
@@ -41,8 +43,9 @@ CREATE TABLE "Task" (
 CREATE TABLE "Completion" (
     "id" TEXT NOT NULL,
     "weekStart" TEXT NOT NULL,
-    "approved" BOOLEAN NOT NULL DEFAULT true,
+    "status" "CompletionStatus" NOT NULL DEFAULT 'PENDING',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "approvedAt" TIMESTAMP(3),
     "taskId" TEXT NOT NULL,
     "kidId" TEXT NOT NULL,
 
@@ -56,6 +59,7 @@ CREATE TABLE "LedgerEntry" (
     "type" "LedgerType" NOT NULL,
     "minutes" INTEGER NOT NULL,
     "note" TEXT,
+    "celebrated" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "kidId" TEXT NOT NULL,
     "taskId" TEXT,
@@ -78,7 +82,7 @@ CREATE INDEX "Task_kidId_idx" ON "Task"("kidId");
 CREATE INDEX "Completion_kidId_weekStart_idx" ON "Completion"("kidId", "weekStart");
 
 -- CreateIndex
-CREATE INDEX "Completion_taskId_weekStart_idx" ON "Completion"("taskId", "weekStart");
+CREATE INDEX "Completion_taskId_weekStart_status_idx" ON "Completion"("taskId", "weekStart", "status");
 
 -- CreateIndex
 CREATE INDEX "LedgerEntry_kidId_weekStart_idx" ON "LedgerEntry"("kidId", "weekStart");

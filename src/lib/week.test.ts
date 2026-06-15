@@ -1,5 +1,41 @@
 import { describe, expect, test } from "vitest";
-import { formatWeekLabel, localISODate, weekStartISO } from "./week";
+import {
+  dayCellState,
+  formatWeekLabel,
+  localISODate,
+  relativeWeek,
+  weekStartISO,
+} from "./week";
+
+describe("relativeWeek", () => {
+  const cur = "2026-06-15";
+  test("classifies current / last / next week", () => {
+    expect(relativeWeek(cur, cur)).toEqual({ state: "current", tag: "This week" });
+    expect(relativeWeek("2026-06-08", cur)).toEqual({ state: "past", tag: "Last week" });
+    expect(relativeWeek("2026-06-22", cur)).toEqual({ state: "future", tag: "Next week" });
+  });
+  test("labels distant weeks generically", () => {
+    expect(relativeWeek("2026-06-01", cur)).toEqual({ state: "past", tag: "Earlier" });
+    expect(relativeWeek("2026-06-29", cur)).toEqual({ state: "future", tag: "Upcoming" });
+  });
+});
+
+describe("dayCellState", () => {
+  test("future week is always muted", () => {
+    expect(dayCellState("future", 0, -1, true)).toBe("muted");
+  });
+  test("past week reflects activity", () => {
+    expect(dayCellState("past", 3, -1, true)).toBe("done");
+    expect(dayCellState("past", 3, -1, false)).toBe("none");
+  });
+  test("current week: before today, today, and ahead", () => {
+    expect(dayCellState("current", 1, 3, true)).toBe("done");
+    expect(dayCellState("current", 1, 3, false)).toBe("none");
+    expect(dayCellState("current", 3, 3, true)).toBe("todayDone");
+    expect(dayCellState("current", 3, 3, false)).toBe("today");
+    expect(dayCellState("current", 5, 3, false)).toBe("ahead");
+  });
+});
 
 describe("localISODate", () => {
   test("returns the calendar date observed in the timezone", () => {

@@ -2,9 +2,33 @@
 // The ledger (signed minute entries) is the source of truth for a kid's
 // balance; targets earn a lump-sum EARN entry once their weekly target is met.
 
+import type { TallyDot } from "./types";
+
 /** A task's weekly target is met once approved completions reach the target. */
 export function isTargetMet(approvedCount: number, target: number): boolean {
   return approvedCount >= target;
+}
+
+/** Minutes earned this week = Σ reward for tasks at or over their target. */
+export function gainedFromTasks(
+  tasks: Array<{ approved: number; target: number; reward: number }>,
+): number {
+  return tasks.reduce(
+    (sum, t) => (isTargetMet(t.approved, t.target) ? sum + t.reward : sum),
+    0,
+  );
+}
+
+/** Minutes left to use this week, floored at zero. */
+export function computeLeft(gained: number, redeemed: number, adjust: number): number {
+  return Math.max(0, gained - redeemed + adjust);
+}
+
+/** Tally squares: approved → on, then pending → pend, remainder → off. */
+export function tallyDots(approved: number, pending: number, target: number): TallyDot[] {
+  return Array.from({ length: target }, (_, i) =>
+    i < approved ? "on" : i < approved + pending ? "pend" : "off",
+  );
 }
 
 /** Current weekly balance = sum of signed ledger minutes. */

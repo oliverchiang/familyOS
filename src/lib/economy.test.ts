@@ -1,5 +1,42 @@
 import { describe, expect, test } from "vitest";
-import { canRedeem, isTargetMet, tasksToAward, weekBalanceMins } from "./economy";
+import {
+  canRedeem,
+  computeLeft,
+  gainedFromTasks,
+  isTargetMet,
+  tallyDots,
+  tasksToAward,
+  weekBalanceMins,
+} from "./economy";
+
+describe("gainedFromTasks", () => {
+  test("sums rewards for tasks at or over target only", () => {
+    expect(
+      gainedFromTasks([
+        { approved: 4, target: 4, reward: 60 }, // earned
+        { approved: 3, target: 5, reward: 30 }, // not earned
+        { approved: 5, target: 5, reward: 30 }, // earned
+      ]),
+    ).toBe(90);
+  });
+});
+
+describe("computeLeft", () => {
+  test("left = gained - redeemed + adjust, floored at 0", () => {
+    expect(computeLeft(90, 15, 0)).toBe(75);
+    expect(computeLeft(90, 30, 15)).toBe(75);
+    expect(computeLeft(30, 60, 0)).toBe(0); // never negative
+  });
+});
+
+describe("tallyDots", () => {
+  test("marks approved as on, pending as pend, rest off", () => {
+    expect(tallyDots(2, 1, 4)).toEqual(["on", "on", "pend", "off"]);
+  });
+  test("clamps to target length", () => {
+    expect(tallyDots(4, 0, 4)).toEqual(["on", "on", "on", "on"]);
+  });
+});
 
 describe("isTargetMet", () => {
   test("is true when approved count reaches the target", () => {

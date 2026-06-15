@@ -1,13 +1,14 @@
-// FamilyOS v2 — weekly screen-time economy.
-// See docs/PRD.md for the model rationale.
+// FamilyOS v2 — weekly screen-time economy ("Editorial" design).
+// See docs/PRD.md and design_handoff_familyos/ for rationale.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled (runtime)
+  directUrl = env("DIRECT_URL") // direct (migrations)
 }
 
 enum Role {
@@ -20,17 +21,24 @@ enum TaskDisplay {
   BAR // progress toward a goal, shown as a bar (e.g. homework)
 }
 
+enum CompletionStatus {
+  PENDING // logged by kid, awaiting parent approval
+  APPROVED // parent approved — counts toward the target
+  REJECTED // parent rejected — discarded
+}
+
 enum LedgerType {
   EARN // target hit → lump-sum minutes
   REDEEM // screen time used
-  ADJUST // manual parent correction
+  ADJUST // manual parent +/- bonus
 }
 
 model FamilyMember {
   id            String   @id @default(cuid())
   name          String
   role          Role
-  avatar        String   @default("🙂")
+  // Illustration key for the avatar: tyler | riley | mum
+  avatarKey     String
   order         Int      @default(0)
   weeklyCapMins Int      @default(120)
   createdAt     DateTime @default(now())
@@ -43,8 +51,7 @@ model FamilyMember {
 model Task {
   id          String      @id @default(cuid())
   title       String
-  icon        String // frontend IconName: drums | guitar | book | pencil
-  tile        String // frontend TileColor: drums | book | maths
+  kind        String // illustration: drum | guitar | book | pencil
   display     TaskDisplay
   targetCount Int // sessions (tally) or steps (bar) to hit the weekly target
   rewardMins  Int // minutes awarded once the target is met
@@ -62,12 +69,11 @@ model Task {
 }
 
 model Completion {
-  id        String   @id @default(cuid())
-  weekStart String // ISO date (YYYY-MM-DD) of the week's Monday
-  // Interim default: counts immediately. Flips to false (pending) once the
-  // parent-approval dashboard exists — see docs/PRD.md open questions.
-  approved  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id         String           @id @default(cuid())
+  weekStart  String // ISO date (YYYY-MM-DD) of the week's Monday
+  status     CompletionStatus @default(PENDING)
+  createdAt  DateTime         @default(now())
+  approvedAt DateTime?
 
   taskId String
   task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
@@ -75,7 +81,7 @@ model Completion {
   kid    FamilyMember @relation(fields: [kidId], references: [id], onDelete: Cascade)
 
   @@index([kidId, weekStart])
-  @@index([taskId, weekStart])
+  @@index([taskId, weekStart, status])
 }
 
 model LedgerEntry {
@@ -84,6 +90,8 @@ model LedgerEntry {
   type      LedgerType
   minutes   Int // signed: + earn, - redeem, ± adjust
   note      String?
+  // EARN only: whether the kid has seen the earn-celebration yet.
+  celebrated Boolean   @default(false)
   createdAt DateTime   @default(now())
 
   kidId String
