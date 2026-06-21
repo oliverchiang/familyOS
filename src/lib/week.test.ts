@@ -57,8 +57,8 @@ describe("weekStartISO", () => {
   });
 
   test("treats Sunday as the last day of the week (Mon–Sun)", () => {
-    // Sunday 2026-06-21 → still the week starting Monday 2026-06-15
-    expect(weekStartISO(new Date("2026-06-21T12:00:00Z"))).toBe("2026-06-15");
+    // Sunday noon NZ (2026-06-21T00:00Z, UTC+12) → still the week starting Monday 2026-06-15
+    expect(weekStartISO(new Date("2026-06-21T00:00:00Z"))).toBe("2026-06-15");
   });
 
   test("uses the target timezone, not UTC, to decide the day", () => {

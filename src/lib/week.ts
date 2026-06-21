@@ -1,10 +1,10 @@
 // Week-boundary logic for the screen-time economy.
-// Weeks run Monday–Sunday, computed in a fixed timezone (default Europe/London)
+// Weeks run Monday–Sunday, computed in a fixed timezone (the family's local TZ)
 // so awards and resets land on the correct local day regardless of server TZ.
 
 import type { DayState, WeekState } from "./types";
 
-export const DEFAULT_TIME_ZONE = "Europe/London";
+export const DEFAULT_TIME_ZONE = "Pacific/Auckland";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",

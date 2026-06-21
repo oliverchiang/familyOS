@@ -24,6 +24,20 @@ export function computeLeft(gained: number, redeemed: number, adjust: number): n
   return Math.max(0, gained - redeemed + adjust);
 }
 
+/**
+ * Stacked-bar breakdown of the week's screen-time pool: how much has been used
+ * vs. how much remains. `total` (used + remaining) reconciles task earnings and
+ * any parent adjustments, so the bar always sums to 100%. `usedPct` is the
+ * filled portion — it grows as the kid spends time, so the bar visibly moves.
+ */
+export function screenTimeBar(
+  redeemed: number,
+  left: number,
+): { total: number; usedPct: number } {
+  const total = redeemed + left;
+  return { total, usedPct: total > 0 ? (redeemed / total) * 100 : 0 };
+}
+
 /** Tally squares: approved → on, then pending → pend, remainder → off. */
 export function tallyDots(approved: number, pending: number, target: number): TallyDot[] {
   return Array.from({ length: target }, (_, i) =>
@@ -39,6 +53,20 @@ export function weekBalanceMins(entries: Array<{ minutes: number }>): number {
 /** A redemption is valid if positive and within the available balance. */
 export function canRedeem(balanceMins: number, amountMins: number): boolean {
   return amountMins > 0 && amountMins <= balanceMins;
+}
+
+/**
+ * Celebration-token balance from the event log: grants minus revokes and
+ * redemptions. Floored at zero so a corrupt log never shows a negative bank.
+ */
+export function tokenBalance(
+  events: Array<{ event: "GRANT" | "REVOKE" | "REDEEM" }>,
+): number {
+  const net = events.reduce(
+    (sum, e) => sum + (e.event === "GRANT" ? 1 : -1),
+    0,
+  );
+  return Math.max(0, net);
 }
 
 export interface AwardCandidate {

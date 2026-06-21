@@ -2,7 +2,13 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { adjustMinutes, approveCompletion, rejectCompletion } from "@/app/actions";
+import {
+  adjustMinutes,
+  approveCompletion,
+  grantCelebrationToken,
+  rejectCompletion,
+  revokeCelebrationToken,
+} from "@/app/actions";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/cn";
 import type { HistoryItem, ParentDeskView, ParentKidSummary, QueueItem } from "@/lib/types";
@@ -57,6 +63,8 @@ export function ParentDashboard({ view }: { view: ParentDeskView }) {
           key={k.kidId}
           kid={k}
           onAdjust={(delta) => act(() => adjustMinutes(k.kidId, delta))}
+          onGrantToken={() => act(() => grantCelebrationToken(k.kidId))}
+          onRevokeToken={() => act(() => revokeCelebrationToken(k.kidId))}
         />
       ))}
     </section>
@@ -168,9 +176,13 @@ function QueueRow({
 function KidSummary({
   kid,
   onAdjust,
+  onGrantToken,
+  onRevokeToken,
 }: {
   kid: ParentKidSummary;
   onAdjust: (delta: number) => void;
+  onGrantToken: () => void;
+  onRevokeToken: () => void;
 }) {
   return (
     <div className="border-b border-hairline py-4">
@@ -226,6 +238,26 @@ function KidSummary({
           −15
         </button>
       </div>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="flex-1 font-meta text-[13px] font-bold text-muted">
+          🎉 Celebrations · {kid.celebrationTokens}
+        </div>
+        <button
+          type="button"
+          onClick={onGrantToken}
+          className="h-9 rounded-[9px] border-[1.5px] border-ink bg-paper px-3 text-[13px] font-bold text-ink transition-transform active:scale-95"
+        >
+          + add
+        </button>
+        <button
+          type="button"
+          onClick={onRevokeToken}
+          disabled={kid.celebrationTokens <= 0}
+          className="h-9 w-10 rounded-[9px] border-[1.5px] border-disabled bg-paper text-[13px] font-bold text-muted transition-transform active:scale-95 disabled:opacity-40"
+        >
+          −
+        </button>
+      </div>
     </div>
   );
 }
@@ -234,9 +266,16 @@ function HistoryRow({ item }: { item: HistoryItem }) {
   const color =
     item.kind === "earn"
       ? "text-success"
-      : item.kind === "redeem"
-        ? "text-ink"
-        : "text-muted";
+      : item.kind === "token"
+        ? "text-accent"
+        : item.kind === "redeem"
+          ? "text-ink"
+          : "text-muted";
+  const sign = item.amount >= 0 ? "+" : "−";
+  const value =
+    item.unit === "token"
+      ? `${sign}${Math.abs(item.amount)} 🎉`
+      : `${sign}${Math.abs(item.amount)}m`;
   return (
     <div className="flex items-center gap-3 border-b border-hairline py-2.5">
       <div className="flex-1">
@@ -245,10 +284,7 @@ function HistoryRow({ item }: { item: HistoryItem }) {
         </div>
         <div className="font-meta text-xs font-bold text-faint">{item.time}</div>
       </div>
-      <div className={cn("font-meta text-[15px] font-extrabold", color)}>
-        {item.mins >= 0 ? "+" : "−"}
-        {Math.abs(item.mins)}m
-      </div>
+      <div className={cn("font-meta text-[15px] font-extrabold", color)}>{value}</div>
     </div>
   );
 }

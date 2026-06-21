@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { computeLeft, gainedFromTasks, tallyDots } from "@/lib/economy";
+import { computeLeft, gainedFromTasks, tallyDots, tokenBalance } from "@/lib/economy";
 import {
   DEFAULT_TIME_ZONE,
   dayCellState,
@@ -56,7 +56,7 @@ async function assembleKidWeek(
 ): Promise<KidWeekView> {
   const rel = relativeWeek(weekStart, currentWeekStart);
 
-  const [tasks, completions, ledger] = await Promise.all([
+  const [tasks, completions, ledger, tokenEvents] = await Promise.all([
     prisma.task.findMany({
       where: { kidId: kid.id, active: true },
       orderBy: { order: "asc" },
@@ -68,6 +68,11 @@ async function assembleKidWeek(
     prisma.ledgerEntry.findMany({
       where: { kidId: kid.id, weekStart },
       orderBy: { createdAt: "desc" },
+    }),
+    // Tokens are persistent (not week-scoped): balance is the same on any week.
+    prisma.celebrationToken.findMany({
+      where: { kidId: kid.id },
+      select: { event: true },
     }),
   ]);
 
@@ -149,6 +154,7 @@ async function assembleKidWeek(
     left,
     redeemed,
     weeklyCapMins: kid.weeklyCapMins,
+    celebrationTokens: tokenBalance(tokenEvents),
     isCurrent,
     isPast: rel.state === "past",
     isFuture: rel.state === "future",
@@ -225,6 +231,12 @@ function historyText(type: string, minutes: number, taskTitle?: string | null): 
   return minutes >= 0 ? "Bonus minutes" : "Minutes removed";
 }
 
+function tokenHistoryText(event: string): string {
+  if (event === "GRANT") return "Celebration added";
+  if (event === "REDEEM") return "Redeemed a celebration";
+  return "Celebration removed";
+}
+
 function relTime(date: Date, now: Date, tz: string): string {
   if (localISODate(date, tz) === localISODate(now, tz)) return "Today";
   return new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short" }).format(date);
@@ -263,6 +275,7 @@ export async function getParentDeskView(): Promise<ParentDeskView> {
         name: k.name,
         avatarKey: k.avatarKey as AvatarKey,
         gained: w.gained,
+        celebrationTokens: w.celebrationTokens,
         tasks: w.tasks.map((t) => ({
           id: t.id,
           title: t.title,
@@ -277,18 +290,48 @@ export async function getParentDeskView(): Promise<ParentDeskView> {
     }),
   );
 
-  const ledger = await prisma.ledgerEntry.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 8,
-    include: { kid: true, task: true },
-  });
-  const history: HistoryItem[] = ledger.map((l) => ({
-    who: l.kid.name,
-    text: historyText(l.type, l.minutes, l.task?.title),
-    mins: l.minutes,
-    kind: l.type === "EARN" ? "earn" : l.type === "REDEEM" ? "redeem" : "adjust",
-    time: relTime(l.createdAt, now, tz),
-  }));
+  // Interleave the minute ledger and the token log into one recent-activity feed.
+  const [ledger, tokenLog] = await Promise.all([
+    prisma.ledgerEntry.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 8,
+      include: { kid: true, task: true },
+    }),
+    prisma.celebrationToken.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 8,
+      include: { kid: true },
+    }),
+  ]);
+
+  const dated: Array<{ createdAt: Date; item: HistoryItem }> = [
+    ...ledger.map((l) => ({
+      createdAt: l.createdAt,
+      item: {
+        who: l.kid.name,
+        text: historyText(l.type, l.minutes, l.task?.title),
+        amount: l.minutes,
+        unit: "min" as const,
+        kind: (l.type === "EARN" ? "earn" : l.type === "REDEEM" ? "redeem" : "adjust") as HistoryItem["kind"],
+        time: relTime(l.createdAt, now, tz),
+      },
+    })),
+    ...tokenLog.map((t) => ({
+      createdAt: t.createdAt,
+      item: {
+        who: t.kid.name,
+        text: tokenHistoryText(t.event),
+        amount: t.event === "GRANT" ? 1 : -1,
+        unit: "token" as const,
+        kind: "token" as const,
+        time: relTime(t.createdAt, now, tz),
+      },
+    })),
+  ];
+  const history: HistoryItem[] = dated
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, 8)
+    .map((d) => d.item);
 
   return { weekLabel: formatWeekLabel(cws), queue, kids: kidSummaries, history };
 }

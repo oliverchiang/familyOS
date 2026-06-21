@@ -33,6 +33,12 @@ enum LedgerType {
   ADJUST // manual parent +/- bonus
 }
 
+enum CelebrationTokenEvent {
+  GRANT // parent added a token
+  REVOKE // parent removed an unused token
+  REDEEM // kid spent a token
+}
+
 model FamilyMember {
   id            String   @id @default(cuid())
   name          String
@@ -46,6 +52,8 @@ model FamilyMember {
   tasks       Task[]
   completions Completion[]
   ledger      LedgerEntry[]
+  // Persistent (non-weekly) "piggy bank" of celebration tokens — event log.
+  celebrationTokens CelebrationToken[]
 }
 
 model Task {
@@ -105,6 +113,20 @@ model LedgerEntry {
   // One EARN per task/week (idempotent awards). NULL taskId (REDEEM/ADJUST) is
   // treated as distinct by Postgres, so those remain unconstrained.
   @@unique([kidId, weekStart, taskId])
+}
+
+// One row per token event. Balance = #GRANT − #REVOKE − #REDEEM.
+// Not week-scoped: tokens accumulate and carry over until spent.
+model CelebrationToken {
+  id        String                @id @default(cuid())
+  event     CelebrationTokenEvent
+  note      String?
+  createdAt DateTime              @default(now())
+
+  kidId String
+  kid   FamilyMember @relation(fields: [kidId], references: [id], onDelete: Cascade)
+
+  @@index([kidId])
 }
 
 model Setting {

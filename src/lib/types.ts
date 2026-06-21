@@ -62,6 +62,7 @@ export interface KidWeekView {
   left: number;
   redeemed: number;
   weeklyCapMins: number;
+  celebrationTokens: number; // persistent piggy-bank balance
   isCurrent: boolean;
   isPast: boolean;
   isFuture: boolean;
@@ -109,14 +110,16 @@ export interface ParentKidSummary {
   name: string;
   avatarKey: AvatarKey;
   gained: number;
+  celebrationTokens: number;
   tasks: ParentTaskRow[];
 }
 
 export interface HistoryItem {
   who: string;
   text: string;
-  mins: number; // signed
-  kind: "earn" | "redeem" | "adjust";
+  amount: number; // signed
+  unit: "min" | "token";
+  kind: "earn" | "redeem" | "adjust" | "token";
   time: string;
 }
 

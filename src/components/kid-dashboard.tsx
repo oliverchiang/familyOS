@@ -2,10 +2,15 @@
 
 import { useOptimistic, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { logCompletion, markCelebrated, redeemMinutes } from "@/app/actions";
+import {
+  logCompletion,
+  markCelebrated,
+  redeemCelebrationToken,
+  redeemMinutes,
+} from "@/app/actions";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/cn";
-import { tallyDots } from "@/lib/economy";
+import { screenTimeBar, tallyDots } from "@/lib/economy";
 import type { DayCell, KidWeekView, TaskView } from "@/lib/types";
 import { Avatar, TaskIllustration } from "./illustrations";
 
@@ -15,6 +20,9 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [redeemSel, setRedeemSel] = useState(Math.min(30, view.left) || 15);
   const [celebrated, setCelebrated] = useState(false);
+  // Celebration-token redemption: confirm step → success celebration.
+  const [tokenConfirmOpen, setTokenConfirmOpen] = useState(false);
+  const [tokenCelebrate, setTokenCelebrate] = useState(false);
   // Shared-iPad landscape → split view; portrait/phone → single column.
   const landscape = useMediaQuery("(min-width: 820px) and (orientation: landscape)");
 
@@ -33,12 +41,20 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
   function didIt(id: string) {
     startTransition(async () => {
       bumpPending(id);
-      await logCompletion(id);
+      await logCompletion(id, view.meta.weekStart);
     });
   }
 
   function goWeek(weekStart: string) {
     router.push(`/kid/${view.kidId}?week=${weekStart}`);
+  }
+
+  function confirmRedeemToken() {
+    setTokenConfirmOpen(false);
+    startTransition(async () => {
+      const res = await redeemCelebrationToken(view.kidId);
+      if (res.ok) setTokenCelebrate(true);
+    });
   }
 
   function dismissCelebration() {
@@ -79,11 +95,7 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
           {view.meta.tag}
         </div>
       </div>
-      <NavButton
-        dir="next"
-        enabled={!view.isFuture}
-        onClick={() => goWeek(view.nextWeekStart)}
-      />
+      <NavButton dir="next" enabled onClick={() => goWeek(view.nextWeekStart)} />
     </div>
   );
 
@@ -97,7 +109,35 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
     </div>
   );
 
-  const hero = (
+  // Current week: spotlight the minutes still LEFT (this is what drops as the
+  // kid uses screen time) over an earned-vs-used bar. Other weeks: history.
+  const bar = screenTimeBar(view.redeemed, view.left);
+
+  const hero = view.isCurrent ? (
+    <div className="border-t-[1.5px] border-ink px-[26px] py-[18px]">
+      <div className="flex items-start gap-3">
+        <span className="text-[84px] font-bold leading-[0.8] tracking-[-0.05em]">
+          {view.left}
+        </span>
+        <span className="pt-1.5 text-sm font-semibold uppercase leading-[1.2] tracking-[0.08em] text-accent">
+          minutes
+          <br />
+          left
+        </span>
+      </div>
+      <div className="mt-4 flex h-1.5 w-full overflow-hidden rounded-full bg-track">
+        <div
+          className="h-full rounded-l-full bg-ink/30 transition-[width] duration-300 ease-out"
+          style={{ width: `${bar.usedPct}%` }}
+        />
+        <div className="h-full flex-1 bg-accent transition-[width] duration-300 ease-out" />
+      </div>
+      <div className="mt-2 flex justify-between font-meta text-[13px] font-bold text-muted">
+        <span>{view.redeemed} used</span>
+        <span>{bar.total} earned</span>
+      </div>
+    </div>
+  ) : (
     <div className="border-t-[1.5px] border-ink px-[26px] py-[18px]">
       <div className="flex items-start gap-3">
         <span className="text-[84px] font-bold leading-[0.8] tracking-[-0.05em]">
@@ -161,12 +201,39 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
           )}
         >
           {view.isFuture
-            ? "This week hasn’t started yet"
+            ? "Get ahead — tap a task to log it early"
             : `Week finished · ${view.gained} mins gained`}
         </div>
       )}
     </div>
   );
+
+  // Persistent celebration-token "piggy bank" — separate from screen time.
+  const celebrations = view.isCurrent ? (
+    <div className="px-[26px] pb-1 pt-3">
+      <div className="flex items-center gap-3.5 rounded-[14px] bg-tile px-[18px] py-[15px]">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[13px] bg-paper text-[26px]">
+          🎉
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[17px] font-semibold">Celebrations</div>
+          <div className="font-meta text-[13px] font-bold text-muted">
+            {view.celebrationTokens === 0
+              ? "None saved up yet"
+              : `${view.celebrationTokens} to redeem`}
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={view.celebrationTokens <= 0}
+          onClick={() => setTokenConfirmOpen(true)}
+          className="h-10 shrink-0 rounded-[10px] bg-accent px-4 text-sm font-bold text-white transition-transform active:scale-95 disabled:opacity-40"
+        >
+          Redeem
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <div
@@ -197,6 +264,7 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
             {weekPicker}
             {calendar}
             {hero}
+            {celebrations}
             {footer}
           </div>
           <div className="flex-1 overflow-y-auto">{taskList}</div>
@@ -207,6 +275,7 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
           {weekPicker}
           {calendar}
           {hero}
+          {celebrations}
           {taskList}
           {footer}
         </div>
@@ -228,12 +297,31 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
         />
       )}
 
+      {tokenConfirmOpen && (
+        <ConfirmSheet
+          title="Use a celebration?"
+          body={`You have ${view.celebrationTokens}. This token will be used up.`}
+          confirmLabel="Yes, celebrate!"
+          onClose={() => setTokenConfirmOpen(false)}
+          onConfirm={confirmRedeemToken}
+        />
+      )}
+
       {view.celebration && !celebrated && (
         <Celebration
+          variant="earn"
           who={view.celebration.who}
           mins={view.celebration.mins}
           task={view.celebration.task}
           onDismiss={dismissCelebration}
+        />
+      )}
+
+      {tokenCelebrate && (
+        <Celebration
+          variant="token"
+          who={view.kidName}
+          onDismiss={() => setTokenCelebrate(false)}
         />
       )}
     </div>
@@ -321,13 +409,13 @@ function TaskRow({
         +{task.reward}
       </span>
     );
-  } else if (view.isCurrent && task.pending > 0) {
+  } else if (!view.isPast && task.pending > 0) {
     action = (
       <span className="shrink-0 whitespace-nowrap rounded-full bg-accent-tint px-[11px] py-1.5 font-meta text-xs font-extrabold text-accent">
         checking
       </span>
     );
-  } else if (view.isCurrent) {
+  } else if (!view.isPast) {
     action = (
       <button
         type="button"
@@ -462,15 +550,62 @@ function RedeemSheet({
   );
 }
 
+function ConfirmSheet({
+  title,
+  body,
+  confirmLabel,
+  onClose,
+  onConfirm,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-30 flex items-end justify-center bg-[rgba(26,21,16,0.4)]"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-[640px] rounded-t-[22px] bg-paper px-[26px] pb-[30px] pt-6 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]"
+      >
+        <div className="text-xl font-bold tracking-[-0.01em]">{title}</div>
+        <div className="mb-4 mt-0.5 font-meta text-[13px] font-bold text-muted">{body}</div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-[50px] flex-1 rounded-[11px] border-[1.5px] border-disabled bg-paper text-[15px] font-bold text-muted"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="h-[50px] flex-[2] rounded-[11px] bg-accent text-[15px] font-bold text-white"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Celebration({
+  variant,
   who,
   mins,
   task,
   onDismiss,
 }: {
+  variant: "earn" | "token";
   who: string;
-  mins: number;
-  task: string;
+  mins?: number;
+  task?: string;
   onDismiss: () => void;
 }) {
   const colors = ["#E8503A", "#1A1510", "#3E8E6E", "#F0B429"];
@@ -505,16 +640,31 @@ function Celebration({
     >
       <div className="pointer-events-none absolute inset-0">{confetti}</div>
       <div className="fos-pop relative rounded-[22px] bg-paper px-10 py-9 text-center shadow-[0_24px_60px_rgba(0,0,0,0.25)]">
-        <div className="text-xs font-bold uppercase tracking-[0.14em] text-muted">
-          {who} earned
-        </div>
-        <div className="my-1.5 text-[88px] font-bold leading-none tracking-[-0.04em] text-accent">
-          +{mins}
-        </div>
-        <div className="text-lg font-bold">minutes of screen time</div>
-        <div className="mt-1 font-meta text-[13px] font-bold text-muted">
-          {task} complete
-        </div>
+        {variant === "token" ? (
+          <>
+            <div className="text-xs font-bold uppercase tracking-[0.14em] text-muted">
+              {who} unlocked
+            </div>
+            <div className="my-1.5 text-[88px] leading-none">🎉</div>
+            <div className="text-lg font-bold">A celebration!</div>
+            <div className="mt-1 font-meta text-[13px] font-bold text-muted">
+              Go enjoy your treat
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-xs font-bold uppercase tracking-[0.14em] text-muted">
+              {who} earned
+            </div>
+            <div className="my-1.5 text-[88px] font-bold leading-none tracking-[-0.04em] text-accent">
+              +{mins}
+            </div>
+            <div className="text-lg font-bold">minutes of screen time</div>
+            <div className="mt-1 font-meta text-[13px] font-bold text-muted">
+              {task} complete
+            </div>
+          </>
+        )}
         <button
           type="button"
           onClick={onDismiss}

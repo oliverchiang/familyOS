@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { syncAwards } from "@/lib/db/awards";
-import { computeLeft, gainedFromTasks } from "@/lib/economy";
+import { computeLeft, gainedFromTasks, tokenBalance } from "@/lib/economy";
 import { prisma } from "@/lib/prisma";
 import { weekStartISO } from "@/lib/week";
 
@@ -30,18 +30,22 @@ function revalidateAll(kidId?: string) {
   if (kidId) revalidatePath(`/kid/${kidId}`);
 }
 
-/** Kid logs a task — creates a PENDING completion (awaits parent approval). */
-export async function logCompletion(taskId: string): Promise<void> {
+/**
+ * Kid logs a task — creates a PENDING completion (awaits parent approval).
+ * Records against the week being viewed (snapped to its Monday) so future
+ * weeks can be logged ahead; defaults to the current week.
+ */
+export async function logCompletion(taskId: string, weekStart?: string): Promise<void> {
   const task = await prisma.task.findUnique({ where: { id: taskId } });
   if (!task) throw new Error(`Unknown task: ${taskId}`);
 
+  const ws =
+    weekStart && /^\d{4}-\d{2}-\d{2}$/.test(weekStart)
+      ? weekStartISO(new Date(`${weekStart}T12:00:00Z`))
+      : weekStartISO(new Date());
+
   await prisma.completion.create({
-    data: {
-      taskId: task.id,
-      kidId: task.kidId,
-      weekStart: weekStartISO(new Date()),
-      status: "PENDING",
-    },
+    data: { taskId: task.id, kidId: task.kidId, weekStart: ws, status: "PENDING" },
   });
   revalidateAll(task.kidId);
 }
@@ -141,6 +145,47 @@ export async function adjustMinutes(kidId: string, delta: number): Promise<void>
     },
   });
   revalidateAll(kidId);
+}
+
+/** Parent grants one celebration token to a kid. */
+export async function grantCelebrationToken(kidId: string): Promise<void> {
+  await requireParent();
+  await prisma.celebrationToken.create({ data: { kidId, event: "GRANT" } });
+  revalidateAll(kidId);
+}
+
+/** Parent removes one unredeemed celebration token (no-op when the bank is empty). */
+export async function revokeCelebrationToken(kidId: string): Promise<void> {
+  await requireParent();
+  await prisma.$transaction(async (tx) => {
+    const events = await tx.celebrationToken.findMany({
+      where: { kidId },
+      select: { event: true },
+    });
+    if (tokenBalance(events) <= 0) return;
+    await tx.celebrationToken.create({ data: { kidId, event: "REVOKE" } });
+  });
+  revalidateAll(kidId);
+}
+
+/**
+ * Kid redeems one celebration token. Balance is checked and the REDEEM inserted
+ * in one transaction so a double-tap can't spend below zero.
+ */
+export async function redeemCelebrationToken(
+  kidId: string,
+): Promise<{ ok: boolean }> {
+  const result = await prisma.$transaction(async (tx) => {
+    const events = await tx.celebrationToken.findMany({
+      where: { kidId },
+      select: { event: true },
+    });
+    if (tokenBalance(events) <= 0) return { ok: false };
+    await tx.celebrationToken.create({ data: { kidId, event: "REDEEM" } });
+    return { ok: true };
+  });
+  revalidateAll(kidId);
+  return result;
 }
 
 /** Mark a kid's earn-celebration as seen so it doesn't replay. */
