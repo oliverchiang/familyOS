@@ -51,6 +51,12 @@ export interface Celebration {
   task: string;
 }
 
+/** An available (unused) celebration: free-text reason + id to redeem/mark used. */
+export interface CelebrationItem {
+  id: string;
+  note: string;
+}
+
 export interface KidWeekView {
   kidId: string;
   kidName: string;
@@ -62,7 +68,7 @@ export interface KidWeekView {
   left: number;
   redeemed: number;
   weeklyCapMins: number;
-  celebrationTokens: number; // persistent piggy-bank balance
+  celebrations: CelebrationItem[]; // available (unused) named celebrations
   isCurrent: boolean;
   isPast: boolean;
   isFuture: boolean;
@@ -110,7 +116,7 @@ export interface ParentKidSummary {
   name: string;
   avatarKey: AvatarKey;
   gained: number;
-  celebrationTokens: number;
+  celebrations: CelebrationItem[];
   tasks: ParentTaskRow[];
 }
 

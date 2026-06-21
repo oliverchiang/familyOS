@@ -55,20 +55,6 @@ export function canRedeem(balanceMins: number, amountMins: number): boolean {
   return amountMins > 0 && amountMins <= balanceMins;
 }
 
-/**
- * Celebration-token balance from the event log: grants minus revokes and
- * redemptions. Floored at zero so a corrupt log never shows a negative bank.
- */
-export function tokenBalance(
-  events: Array<{ event: "GRANT" | "REVOKE" | "REDEEM" }>,
-): number {
-  const net = events.reduce(
-    (sum, e) => sum + (e.event === "GRANT" ? 1 : -1),
-    0,
-  );
-  return Math.max(0, net);
-}
-
 export interface AwardCandidate {
   taskId: string;
   approvedCount: number;

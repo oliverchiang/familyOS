@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { computeLeft, gainedFromTasks, tallyDots, tokenBalance } from "@/lib/economy";
+import { computeLeft, gainedFromTasks, tallyDots } from "@/lib/economy";
 import {
   DEFAULT_TIME_ZONE,
   dayCellState,
@@ -56,7 +56,7 @@ async function assembleKidWeek(
 ): Promise<KidWeekView> {
   const rel = relativeWeek(weekStart, currentWeekStart);
 
-  const [tasks, completions, ledger, tokenEvents] = await Promise.all([
+  const [tasks, completions, ledger, celebrations] = await Promise.all([
     prisma.task.findMany({
       where: { kidId: kid.id, active: true },
       orderBy: { order: "asc" },
@@ -69,10 +69,11 @@ async function assembleKidWeek(
       where: { kidId: kid.id, weekStart },
       orderBy: { createdAt: "desc" },
     }),
-    // Tokens are persistent (not week-scoped): balance is the same on any week.
+    // Celebrations are persistent (not week-scoped): the same on any week.
     prisma.celebrationToken.findMany({
-      where: { kidId: kid.id },
-      select: { event: true },
+      where: { kidId: kid.id, state: "AVAILABLE" },
+      select: { id: true, note: true },
+      orderBy: { createdAt: "asc" },
     }),
   ]);
 
@@ -154,7 +155,7 @@ async function assembleKidWeek(
     left,
     redeemed,
     weeklyCapMins: kid.weeklyCapMins,
-    celebrationTokens: tokenBalance(tokenEvents),
+    celebrations,
     isCurrent,
     isPast: rel.state === "past",
     isFuture: rel.state === "future",
@@ -231,12 +232,6 @@ function historyText(type: string, minutes: number, taskTitle?: string | null): 
   return minutes >= 0 ? "Bonus minutes" : "Minutes removed";
 }
 
-function tokenHistoryText(event: string): string {
-  if (event === "GRANT") return "Celebration added";
-  if (event === "REDEEM") return "Redeemed a celebration";
-  return "Celebration removed";
-}
-
 function relTime(date: Date, now: Date, tz: string): string {
   if (localISODate(date, tz) === localISODate(now, tz)) return "Today";
   return new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short" }).format(date);
@@ -275,7 +270,7 @@ export async function getParentDeskView(): Promise<ParentDeskView> {
         name: k.name,
         avatarKey: k.avatarKey as AvatarKey,
         gained: w.gained,
-        celebrationTokens: w.celebrationTokens,
+        celebrations: w.celebrations,
         tasks: w.tasks.map((t) => ({
           id: t.id,
           title: t.title,
@@ -290,8 +285,9 @@ export async function getParentDeskView(): Promise<ParentDeskView> {
     }),
   );
 
-  // Interleave the minute ledger and the token log into one recent-activity feed.
-  const [ledger, tokenLog] = await Promise.all([
+  // Interleave the minute ledger and celebration activity into one recent feed.
+  // Each celebration contributes an "added" event and, once used, a "used" one.
+  const [ledger, celebs] = await Promise.all([
     prisma.ledgerEntry.findMany({
       orderBy: { createdAt: "desc" },
       take: 8,
@@ -316,17 +312,30 @@ export async function getParentDeskView(): Promise<ParentDeskView> {
         time: relTime(l.createdAt, now, tz),
       },
     })),
-    ...tokenLog.map((t) => ({
-      createdAt: t.createdAt,
+    ...celebs.map((c) => ({
+      createdAt: c.createdAt,
       item: {
-        who: t.kid.name,
-        text: tokenHistoryText(t.event),
-        amount: t.event === "GRANT" ? 1 : -1,
+        who: c.kid.name,
+        text: `Added: ${c.note}`,
+        amount: 1,
         unit: "token" as const,
         kind: "token" as const,
-        time: relTime(t.createdAt, now, tz),
+        time: relTime(c.createdAt, now, tz),
       },
     })),
+    ...celebs
+      .filter((c) => c.state === "USED" && c.usedAt)
+      .map((c) => ({
+        createdAt: c.usedAt!,
+        item: {
+          who: c.kid.name,
+          text: `Used: ${c.note}`,
+          amount: -1,
+          unit: "token" as const,
+          kind: "token" as const,
+          time: relTime(c.usedAt!, now, tz),
+        },
+      })),
   ];
   const history: HistoryItem[] = dated
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())

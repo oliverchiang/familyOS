@@ -1,13 +1,13 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
+  addCelebration,
   adjustMinutes,
   approveCompletion,
-  grantCelebrationToken,
+  markCelebrationUsed,
   rejectCompletion,
-  revokeCelebrationToken,
 } from "@/app/actions";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/cn";
@@ -63,8 +63,8 @@ export function ParentDashboard({ view }: { view: ParentDeskView }) {
           key={k.kidId}
           kid={k}
           onAdjust={(delta) => act(() => adjustMinutes(k.kidId, delta))}
-          onGrantToken={() => act(() => grantCelebrationToken(k.kidId))}
-          onRevokeToken={() => act(() => revokeCelebrationToken(k.kidId))}
+          onAddCelebration={(note) => act(() => addCelebration(k.kidId, note))}
+          onCelebrationUsed={(id) => act(() => markCelebrationUsed(id))}
         />
       ))}
     </section>
@@ -176,14 +176,21 @@ function QueueRow({
 function KidSummary({
   kid,
   onAdjust,
-  onGrantToken,
-  onRevokeToken,
+  onAddCelebration,
+  onCelebrationUsed,
 }: {
   kid: ParentKidSummary;
   onAdjust: (delta: number) => void;
-  onGrantToken: () => void;
-  onRevokeToken: () => void;
+  onAddCelebration: (note: string) => void;
+  onCelebrationUsed: (id: string) => void;
 }) {
+  const [note, setNote] = useState("");
+  const canAdd = note.trim().length > 0;
+  function add() {
+    if (!canAdd) return;
+    onAddCelebration(note.trim());
+    setNote("");
+  }
   return (
     <div className="border-b border-hairline py-4">
       <div className="mb-3 flex items-center gap-[11px]">
@@ -238,25 +245,39 @@ function KidSummary({
           −15
         </button>
       </div>
-      <div className="mt-2 flex items-center gap-2">
-        <div className="flex-1 font-meta text-[13px] font-bold text-muted">
-          🎉 Celebrations · {kid.celebrationTokens}
+      <div className="mt-[15px]">
+        <div className="mb-1.5 font-meta text-[12px] font-bold uppercase tracking-[0.1em] text-muted">
+          🎉 Celebrations
         </div>
-        <button
-          type="button"
-          onClick={onGrantToken}
-          className="h-9 rounded-[9px] border-[1.5px] border-ink bg-paper px-3 text-[13px] font-bold text-ink transition-transform active:scale-95"
-        >
-          + add
-        </button>
-        <button
-          type="button"
-          onClick={onRevokeToken}
-          disabled={kid.celebrationTokens <= 0}
-          className="h-9 w-10 rounded-[9px] border-[1.5px] border-disabled bg-paper text-[13px] font-bold text-muted transition-transform active:scale-95 disabled:opacity-40"
-        >
-          −
-        </button>
+        {kid.celebrations.map((c) => (
+          <div key={c.id} className="flex items-center gap-2 py-1">
+            <div className="min-w-0 flex-1 truncate text-[14px] font-semibold">{c.note}</div>
+            <button
+              type="button"
+              onClick={() => onCelebrationUsed(c.id)}
+              className="h-8 shrink-0 rounded-[9px] border-[1.5px] border-ink bg-paper px-3 text-[12.5px] font-bold text-ink transition-transform active:scale-95"
+            >
+              Used
+            </button>
+          </div>
+        ))}
+        <div className="mt-1.5 flex gap-2">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()}
+            placeholder="What's the celebration for?"
+            className="h-9 min-w-0 flex-1 rounded-[9px] border-[1.5px] border-hairline bg-paper px-3 text-[13px] font-semibold text-ink outline-none placeholder:text-faint focus:border-ink"
+          />
+          <button
+            type="button"
+            onClick={add}
+            disabled={!canAdd}
+            className="h-9 shrink-0 rounded-[9px] border-[1.5px] border-ink bg-paper px-3 text-[13px] font-bold text-ink transition-transform active:scale-95 disabled:opacity-40"
+          >
+            Add
+          </button>
+        </div>
       </div>
     </div>
   );

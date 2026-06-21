@@ -7,7 +7,6 @@ import {
   screenTimeBar,
   tallyDots,
   tasksToAward,
-  tokenBalance,
   weekBalanceMins,
 } from "./economy";
 
@@ -83,26 +82,6 @@ describe("screenTimeBar", () => {
   });
   test("is empty (no division by zero) when nothing earned", () => {
     expect(screenTimeBar(0, 0)).toEqual({ total: 0, usedPct: 0 });
-  });
-});
-
-describe("tokenBalance", () => {
-  test("balance = grants − revokes − redeems", () => {
-    expect(
-      tokenBalance([
-        { event: "GRANT" },
-        { event: "GRANT" },
-        { event: "GRANT" },
-        { event: "REVOKE" },
-        { event: "REDEEM" },
-      ]),
-    ).toBe(1);
-  });
-  test("is zero with no events", () => {
-    expect(tokenBalance([])).toBe(0);
-  });
-  test("never reported below zero", () => {
-    expect(tokenBalance([{ event: "REDEEM" }, { event: "REVOKE" }])).toBe(0);
   });
 });
 

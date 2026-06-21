@@ -5,13 +5,13 @@ import { useRouter } from "next/navigation";
 import {
   logCompletion,
   markCelebrated,
-  redeemCelebrationToken,
+  redeemCelebration,
   redeemMinutes,
 } from "@/app/actions";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/cn";
 import { screenTimeBar, tallyDots } from "@/lib/economy";
-import type { DayCell, KidWeekView, TaskView } from "@/lib/types";
+import type { CelebrationItem, DayCell, KidWeekView, TaskView } from "@/lib/types";
 import { Avatar, TaskIllustration } from "./illustrations";
 
 export function KidDashboard({ view }: { view: KidWeekView }) {
@@ -20,9 +20,9 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [redeemSel, setRedeemSel] = useState(Math.min(30, view.left) || 15);
   const [celebrated, setCelebrated] = useState(false);
-  // Celebration-token redemption: confirm step → success celebration.
-  const [tokenConfirmOpen, setTokenConfirmOpen] = useState(false);
-  const [tokenCelebrate, setTokenCelebrate] = useState(false);
+  // Celebration redemption: pick one → confirm → success celebration.
+  const [confirmCeleb, setConfirmCeleb] = useState<CelebrationItem | null>(null);
+  const [celebrateNote, setCelebrateNote] = useState<string | null>(null);
   // Shared-iPad landscape → split view; portrait/phone → single column.
   const landscape = useMediaQuery("(min-width: 820px) and (orientation: landscape)");
 
@@ -49,11 +49,13 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
     router.push(`/kid/${view.kidId}?week=${weekStart}`);
   }
 
-  function confirmRedeemToken() {
-    setTokenConfirmOpen(false);
+  function confirmRedeemCeleb() {
+    const c = confirmCeleb;
+    if (!c) return;
+    setConfirmCeleb(null);
     startTransition(async () => {
-      const res = await redeemCelebrationToken(view.kidId);
-      if (res.ok) setTokenCelebrate(true);
+      const res = await redeemCelebration(c.id);
+      if (res.ok) setCelebrateNote(res.note);
     });
   }
 
@@ -208,29 +210,35 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
     </div>
   );
 
-  // Persistent celebration-token "piggy bank" — separate from screen time.
+  // Persistent named celebrations — separate from screen time.
   const celebrations = view.isCurrent ? (
     <div className="px-[26px] pb-1 pt-3">
-      <div className="flex items-center gap-3.5 rounded-[14px] bg-tile px-[18px] py-[15px]">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[13px] bg-paper text-[26px]">
-          🎉
+      <div className="rounded-[14px] bg-tile px-[18px] py-[15px]">
+        <div className="flex items-center gap-2 text-[17px] font-semibold">
+          <span className="text-[20px]">🎉</span> Celebrations
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-[17px] font-semibold">Celebrations</div>
-          <div className="font-meta text-[13px] font-bold text-muted">
-            {view.celebrationTokens === 0
-              ? "None saved up yet"
-              : `${view.celebrationTokens} to redeem`}
+        {view.celebrations.length === 0 ? (
+          <div className="mt-1 font-meta text-[13px] font-bold text-muted">
+            None saved up yet
           </div>
-        </div>
-        <button
-          type="button"
-          disabled={view.celebrationTokens <= 0}
-          onClick={() => setTokenConfirmOpen(true)}
-          className="h-10 shrink-0 rounded-[10px] bg-accent px-4 text-sm font-bold text-white transition-transform active:scale-95 disabled:opacity-40"
-        >
-          Redeem
-        </button>
+        ) : (
+          <div className="mt-2.5 flex flex-col gap-2">
+            {view.celebrations.map((c) => (
+              <div key={c.id} className="flex items-center gap-3">
+                <div className="min-w-0 flex-1 truncate text-[15px] font-semibold">
+                  {c.note}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setConfirmCeleb(c)}
+                  className="h-9 shrink-0 rounded-[10px] bg-accent px-4 text-[13px] font-bold text-white transition-transform active:scale-95"
+                >
+                  Redeem
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   ) : null;
@@ -297,13 +305,13 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
         />
       )}
 
-      {tokenConfirmOpen && (
+      {confirmCeleb && (
         <ConfirmSheet
-          title="Use a celebration?"
-          body={`You have ${view.celebrationTokens}. This token will be used up.`}
+          title="Use this celebration?"
+          body={`“${confirmCeleb.note}” will be used up — you can only redeem it once.`}
           confirmLabel="Yes, celebrate!"
-          onClose={() => setTokenConfirmOpen(false)}
-          onConfirm={confirmRedeemToken}
+          onClose={() => setConfirmCeleb(null)}
+          onConfirm={confirmRedeemCeleb}
         />
       )}
 
@@ -317,11 +325,12 @@ export function KidDashboard({ view }: { view: KidWeekView }) {
         />
       )}
 
-      {tokenCelebrate && (
+      {celebrateNote !== null && (
         <Celebration
           variant="token"
           who={view.kidName}
-          onDismiss={() => setTokenCelebrate(false)}
+          note={celebrateNote}
+          onDismiss={() => setCelebrateNote(null)}
         />
       )}
     </div>
@@ -600,12 +609,14 @@ function Celebration({
   who,
   mins,
   task,
+  note,
   onDismiss,
 }: {
   variant: "earn" | "token";
   who: string;
   mins?: number;
   task?: string;
+  note?: string;
   onDismiss: () => void;
 }) {
   const colors = ["#E8503A", "#1A1510", "#3E8E6E", "#F0B429"];
@@ -646,7 +657,7 @@ function Celebration({
               {who} unlocked
             </div>
             <div className="my-1.5 text-[88px] leading-none">🎉</div>
-            <div className="text-lg font-bold">A celebration!</div>
+            <div className="text-lg font-bold">{note || "A celebration!"}</div>
             <div className="mt-1 font-meta text-[13px] font-bold text-muted">
               Go enjoy your treat
             </div>

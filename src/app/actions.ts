@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { syncAwards } from "@/lib/db/awards";
-import { computeLeft, gainedFromTasks, tokenBalance } from "@/lib/economy";
+import { computeLeft, gainedFromTasks } from "@/lib/economy";
 import { prisma } from "@/lib/prisma";
 import { weekStartISO } from "@/lib/week";
 
@@ -147,45 +147,41 @@ export async function adjustMinutes(kidId: string, delta: number): Promise<void>
   revalidateAll(kidId);
 }
 
-/** Parent grants one celebration token to a kid. */
-export async function grantCelebrationToken(kidId: string): Promise<void> {
+/** Parent adds a celebration for a kid with a free-text reason (required). */
+export async function addCelebration(kidId: string, note: string): Promise<void> {
   await requireParent();
-  await prisma.celebrationToken.create({ data: { kidId, event: "GRANT" } });
+  const trimmed = note.trim();
+  if (!trimmed) throw new Error("Celebration note is required");
+  await prisma.celebrationToken.create({ data: { kidId, note: trimmed } });
   revalidateAll(kidId);
 }
 
-/** Parent removes one unredeemed celebration token (no-op when the bank is empty). */
-export async function revokeCelebrationToken(kidId: string): Promise<void> {
-  await requireParent();
-  await prisma.$transaction(async (tx) => {
-    const events = await tx.celebrationToken.findMany({
-      where: { kidId },
-      select: { event: true },
+/** Mark one celebration USED (idempotent — only consumes an AVAILABLE one). */
+async function consumeCelebration(id: string): Promise<{ ok: boolean; note: string; kidId: string }> {
+  return prisma.$transaction(async (tx) => {
+    const c = await tx.celebrationToken.findUnique({ where: { id } });
+    if (!c) return { ok: false, note: "", kidId: "" };
+    if (c.state === "USED") return { ok: false, note: c.note, kidId: c.kidId };
+    await tx.celebrationToken.update({
+      where: { id },
+      data: { state: "USED", usedAt: new Date() },
     });
-    if (tokenBalance(events) <= 0) return;
-    await tx.celebrationToken.create({ data: { kidId, event: "REVOKE" } });
+    return { ok: true, note: c.note, kidId: c.kidId };
   });
-  revalidateAll(kidId);
 }
 
-/**
- * Kid redeems one celebration token. Balance is checked and the REDEEM inserted
- * in one transaction so a double-tap can't spend below zero.
- */
-export async function redeemCelebrationToken(
-  kidId: string,
-): Promise<{ ok: boolean }> {
-  const result = await prisma.$transaction(async (tx) => {
-    const events = await tx.celebrationToken.findMany({
-      where: { kidId },
-      select: { event: true },
-    });
-    if (tokenBalance(events) <= 0) return { ok: false };
-    await tx.celebrationToken.create({ data: { kidId, event: "REDEEM" } });
-    return { ok: true };
-  });
-  revalidateAll(kidId);
-  return result;
+/** Kid redeems a specific celebration → marks it used and returns its note. */
+export async function redeemCelebration(id: string): Promise<{ ok: boolean; note: string }> {
+  const r = await consumeCelebration(id);
+  if (r.kidId) revalidateAll(r.kidId);
+  return { ok: r.ok, note: r.note };
+}
+
+/** Parent marks a specific celebration as used (e.g. enjoyed offline). */
+export async function markCelebrationUsed(id: string): Promise<void> {
+  await requireParent();
+  const r = await consumeCelebration(id);
+  if (r.kidId) revalidateAll(r.kidId);
 }
 
 /** Mark a kid's earn-celebration as seen so it doesn't replay. */

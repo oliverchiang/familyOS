@@ -33,10 +33,9 @@ enum LedgerType {
   ADJUST // manual parent +/- bonus
 }
 
-enum CelebrationTokenEvent {
-  GRANT // parent added a token
-  REVOKE // parent removed an unused token
-  REDEEM // kid spent a token
+enum CelebrationState {
+  AVAILABLE // granted, not yet enjoyed
+  USED // redeemed by the kid or marked used by a parent
 }
 
 model FamilyMember {
@@ -115,18 +114,19 @@ model LedgerEntry {
   @@unique([kidId, weekStart, taskId])
 }
 
-// One row per token event. Balance = #GRANT − #REVOKE − #REDEEM.
-// Not week-scoped: tokens accumulate and carry over until spent.
+// One row per celebration. `note` is the free-text reason (what it's for).
+// Not week-scoped: celebrations accumulate and carry over until used.
 model CelebrationToken {
-  id        String                @id @default(cuid())
-  event     CelebrationTokenEvent
-  note      String?
-  createdAt DateTime              @default(now())
+  id        String           @id @default(cuid())
+  note      String // free text — what the celebration is for
+  state     CelebrationState @default(AVAILABLE)
+  createdAt DateTime         @default(now())
+  usedAt    DateTime?
 
   kidId String
   kid   FamilyMember @relation(fields: [kidId], references: [id], onDelete: Cascade)
 
-  @@index([kidId])
+  @@index([kidId, state])
 }
 
 model Setting {
