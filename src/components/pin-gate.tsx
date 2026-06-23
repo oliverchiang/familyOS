@@ -53,9 +53,6 @@ export function PinGate({
         className="w-[300px] rounded-[20px] bg-paper p-7 text-center shadow-[0_24px_60px_rgba(0,0,0,0.3)]"
       >
         <div className="text-[19px] font-bold">Parent PIN</div>
-        <div className="mt-0.5 font-meta text-[13px] font-bold text-muted">
-          Enter 1234 to approve
-        </div>
 
         <div className="my-[18px] flex justify-center gap-3">
           {[0, 1, 2, 3].map((i) => (

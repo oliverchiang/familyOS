@@ -4,7 +4,7 @@ import { weekStartISO } from "../src/lib/week";
 
 // Seeds the single family + this week's and last week's state.
 // Idempotent: clears existing data first. Reward/target values come from the
-// design handoff (placeholders pending Oliver — PRD §10). PIN = 1234.
+// design handoff (placeholders pending Oliver — PRD §10). PIN = 2016.
 
 const prisma = new PrismaClient();
 
@@ -82,7 +82,7 @@ async function main() {
 
   await prisma.setting.createMany({
     data: [
-      { key: "parentPin", value: "1234" },
+      { key: "parentPin", value: "2016" },
       { key: "timezone", value: "Europe/London" },
     ],
   });

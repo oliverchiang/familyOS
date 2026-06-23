@@ -196,7 +196,7 @@ export async function markCelebrated(ledgerId: string): Promise<void> {
 /** Verify the parent PIN; on success, unlock the parent view for the session. */
 export async function verifyPin(pin: string): Promise<{ ok: boolean }> {
   const setting = await prisma.setting.findUnique({ where: { key: "parentPin" } });
-  const expected = setting?.value ?? "1234";
+  const expected = setting?.value ?? "2016";
   if (pin !== expected) return { ok: false };
 
   (await cookies()).set(PARENT_COOKIE, "1", {
