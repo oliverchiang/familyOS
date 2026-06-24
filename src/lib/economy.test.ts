@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   canRedeem,
+  cappedGain,
   computeLeft,
   gainedFromTasks,
   isTargetMet,
@@ -19,6 +20,14 @@ describe("gainedFromTasks", () => {
         { approved: 5, target: 5, reward: 30 }, // earned
       ]),
     ).toBe(90);
+  });
+});
+
+describe("cappedGain", () => {
+  test("caps task earnings at the weekly ceiling", () => {
+    expect(cappedGain(210, 120)).toBe(120);
+    expect(cappedGain(120, 120)).toBe(120);
+    expect(cappedGain(80, 120)).toBe(80);
   });
 });
 

@@ -8,6 +8,7 @@ import {
   approveCompletion,
   markCelebrationUsed,
   rejectCompletion,
+  unapproveCompletion,
 } from "@/app/actions";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/cn";
@@ -74,7 +75,15 @@ export function ParentDashboard({ view }: { view: ParentDeskView }) {
     <section>
       <Label>Recent</Label>
       {view.history.map((h, i) => (
-        <HistoryRow key={i} item={h} />
+        <HistoryRow
+          key={i}
+          item={h}
+          onUndo={
+            h.kind === "approval" && h.completionId
+              ? () => act(() => unapproveCompletion(h.completionId!))
+              : undefined
+          }
+        />
       ))}
     </section>
   );
@@ -235,14 +244,14 @@ function KidSummary({
           onClick={() => onAdjust(15)}
           className="h-9 flex-1 rounded-[9px] border-[1.5px] border-ink bg-paper text-[13px] font-bold text-ink transition-transform active:scale-95"
         >
-          +15 bonus
+          +15 min
         </button>
         <button
           type="button"
           onClick={() => onAdjust(-15)}
           className="h-9 flex-1 rounded-[9px] border-[1.5px] border-disabled bg-paper text-[13px] font-bold text-muted transition-transform active:scale-95"
         >
-          −15
+          −15 min
         </button>
       </div>
       <div className="mt-[15px]">
@@ -283,7 +292,7 @@ function KidSummary({
   );
 }
 
-function HistoryRow({ item }: { item: HistoryItem }) {
+function HistoryRow({ item, onUndo }: { item: HistoryItem; onUndo?: () => void }) {
   const color =
     item.kind === "earn"
       ? "text-success"
@@ -305,7 +314,19 @@ function HistoryRow({ item }: { item: HistoryItem }) {
         </div>
         <div className="font-meta text-xs font-bold text-faint">{item.time}</div>
       </div>
-      <div className={cn("font-meta text-[15px] font-extrabold", color)}>{value}</div>
+      {item.kind === "approval" ? (
+        onUndo ? (
+          <button
+            type="button"
+            onClick={onUndo}
+            className="h-8 shrink-0 rounded-[9px] border-[1.5px] border-disabled bg-paper px-3 text-[12.5px] font-bold text-muted transition-transform active:scale-95"
+          >
+            Undo
+          </button>
+        ) : null
+      ) : (
+        <div className={cn("font-meta text-[15px] font-extrabold", color)}>{value}</div>
+      )}
     </div>
   );
 }

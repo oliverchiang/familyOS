@@ -125,8 +125,10 @@ export interface HistoryItem {
   text: string;
   amount: number; // signed
   unit: "min" | "token";
-  kind: "earn" | "redeem" | "adjust" | "token";
+  kind: "earn" | "redeem" | "adjust" | "token" | "approval";
   time: string;
+  // Present for kind "approval" — lets the parent undo an approval given by mistake.
+  completionId?: string;
 }
 
 export interface ParentDeskView {

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { computeLeft, gainedFromTasks, tallyDots } from "@/lib/economy";
+import { cappedGain, computeLeft, gainedFromTasks, tallyDots } from "@/lib/economy";
 import {
   DEFAULT_TIME_ZONE,
   dayCellState,
@@ -108,8 +108,11 @@ async function assembleKidWeek(
     };
   });
 
-  const gained = gainedFromTasks(
-    taskViews.map((t) => ({ approved: t.approved, target: t.target, reward: t.reward })),
+  const gained = cappedGain(
+    gainedFromTasks(
+      taskViews.map((t) => ({ approved: t.approved, target: t.target, reward: t.reward })),
+    ),
+    kid.weeklyCapMins,
   );
 
   let redeemed = 0;
@@ -285,9 +288,11 @@ export async function getParentDeskView(): Promise<ParentDeskView> {
     }),
   );
 
-  // Interleave the minute ledger and celebration activity into one recent feed.
-  // Each celebration contributes an "added" event and, once used, a "used" one.
-  const [ledger, celebs] = await Promise.all([
+  // Interleave the minute ledger, celebration and approval activity into one
+  // recent feed. Each celebration contributes an "added" event and, once used, a
+  // "used" one. Only approvals made in-app (approvedAt set — not seeded ones)
+  // appear, each with an Undo affordance for the parent.
+  const [ledger, celebs, approvals] = await Promise.all([
     prisma.ledgerEntry.findMany({
       orderBy: { createdAt: "desc" },
       take: 8,
@@ -297,6 +302,12 @@ export async function getParentDeskView(): Promise<ParentDeskView> {
       orderBy: { createdAt: "desc" },
       take: 8,
       include: { kid: true },
+    }),
+    prisma.completion.findMany({
+      where: { weekStart: cws, status: "APPROVED", approvedAt: { not: null }, kid: { role: "KID" } },
+      orderBy: { approvedAt: "desc" },
+      take: 8,
+      include: { kid: true, task: true },
     }),
   ]);
 
@@ -336,6 +347,18 @@ export async function getParentDeskView(): Promise<ParentDeskView> {
           time: relTime(c.usedAt!, now, tz),
         },
       })),
+    ...approvals.map((a) => ({
+      createdAt: a.approvedAt!,
+      item: {
+        who: a.kid.name,
+        text: `${a.task.title} approved`,
+        amount: 0,
+        unit: "min" as const,
+        kind: "approval" as const,
+        time: relTime(a.approvedAt!, now, tz),
+        completionId: a.id,
+      },
+    })),
   ];
   const history: HistoryItem[] = dated
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())

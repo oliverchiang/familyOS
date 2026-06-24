@@ -3,8 +3,9 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { syncAwards } from "@/lib/db/awards";
-import { computeLeft, gainedFromTasks } from "@/lib/economy";
+import { cappedGain, computeLeft, gainedFromTasks } from "@/lib/economy";
 import { prisma } from "@/lib/prisma";
+import { WEEKLY_CAP_MINS } from "@/lib/types";
 import { weekStartISO } from "@/lib/week";
 
 // Single-family, no-account prototype. The parent PIN gates parent-only
@@ -66,6 +67,25 @@ export async function approveCompletion(completionId: string): Promise<void> {
   revalidateAll(completion.kidId);
 }
 
+/**
+ * Parent undoes an approval given by mistake: the completion returns to PENDING
+ * (back in the check queue) and any reward it triggered is clawed back if the
+ * task now falls below its weekly target.
+ */
+export async function unapproveCompletion(completionId: string): Promise<void> {
+  await requireParent();
+  const completion = await prisma.completion.findUnique({ where: { id: completionId } });
+  if (!completion || completion.status !== "APPROVED") return;
+
+  await prisma.completion.update({
+    where: { id: completionId },
+    data: { status: "PENDING", approvedAt: null },
+  });
+
+  await syncAwards(completion.kidId, completion.weekStart, { celebrated: false });
+  revalidateAll(completion.kidId);
+}
+
 /** Parent rejects one pending completion (discarded). */
 export async function rejectCompletion(completionId: string): Promise<void> {
   await requireParent();
@@ -90,7 +110,8 @@ export async function redeemMinutes(
   const weekStart = weekStartISO(new Date());
 
   const result = await prisma.$transaction(async (tx) => {
-    const [tasks, approvedCounts, ledger] = await Promise.all([
+    const [member, tasks, approvedCounts, ledger] = await Promise.all([
+      tx.familyMember.findUnique({ where: { id: kidId }, select: { weeklyCapMins: true } }),
       tx.task.findMany({
         where: { kidId, active: true },
         select: { id: true, targetCount: true, rewardMins: true },
@@ -104,12 +125,15 @@ export async function redeemMinutes(
     ]);
 
     const countByTask = new Map(approvedCounts.map((c) => [c.taskId, c._count._all]));
-    const gained = gainedFromTasks(
-      tasks.map((t) => ({
-        approved: countByTask.get(t.id) ?? 0,
-        target: t.targetCount,
-        reward: t.rewardMins,
-      })),
+    const gained = cappedGain(
+      gainedFromTasks(
+        tasks.map((t) => ({
+          approved: countByTask.get(t.id) ?? 0,
+          target: t.targetCount,
+          reward: t.rewardMins,
+        })),
+      ),
+      member?.weeklyCapMins ?? WEEKLY_CAP_MINS,
     );
     let redeemed = 0;
     let adjust = 0;

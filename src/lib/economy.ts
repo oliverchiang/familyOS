@@ -19,6 +19,15 @@ export function gainedFromTasks(
   );
 }
 
+/**
+ * Task earnings are capped at the kid's weekly ceiling, so completing more
+ * activities than the cap allows can't earn beyond it. Parent bonus/adjust
+ * minutes are applied on top of this (see computeLeft) and are not capped.
+ */
+export function cappedGain(gained: number, capMins: number): number {
+  return Math.min(gained, capMins);
+}
+
 /** Minutes left to use this week, floored at zero. */
 export function computeLeft(gained: number, redeemed: number, adjust: number): number {
   return Math.max(0, gained - redeemed + adjust);
