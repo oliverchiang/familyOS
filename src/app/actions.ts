@@ -68,9 +68,10 @@ export async function approveCompletion(completionId: string): Promise<void> {
 }
 
 /**
- * Parent undoes an approval given by mistake: the completion returns to PENDING
- * (back in the check queue) and any reward it triggered is clawed back if the
- * task now falls below its weekly target.
+ * Parent undoes an approval given by mistake: the completion is discarded
+ * (REJECTED) so it disappears from the kid's view rather than lingering as a
+ * "checking" item, and any reward it triggered is clawed back if the task now
+ * falls below its weekly target.
  */
 export async function unapproveCompletion(completionId: string): Promise<void> {
   await requireParent();
@@ -79,7 +80,7 @@ export async function unapproveCompletion(completionId: string): Promise<void> {
 
   await prisma.completion.update({
     where: { id: completionId },
-    data: { status: "PENDING", approvedAt: null },
+    data: { status: "REJECTED", approvedAt: null },
   });
 
   await syncAwards(completion.kidId, completion.weekStart, { celebrated: false });
