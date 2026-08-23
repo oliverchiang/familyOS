@@ -28,7 +28,7 @@ enum CompletionStatus {
 }
 
 enum LedgerType {
-  EARN // target hit → lump-sum minutes
+  EARN // one approved step of a task → its share of the reward
   REDEEM // screen time used
   ADJUST // manual parent +/- bonus
 }
@@ -87,6 +87,9 @@ model Completion {
   kidId  String
   kid    FamilyMember @relation(fields: [kidId], references: [id], onDelete: Cascade)
 
+  // The EARN this step was awarded (absent while pending/rejected).
+  award LedgerEntry?
+
   @@index([kidId, weekStart])
   @@index([taskId, weekStart, status])
 }
@@ -97,21 +100,25 @@ model LedgerEntry {
   type      LedgerType
   minutes   Int // signed: + earn, - redeem, ± adjust
   note      String?
-  // EARN only: whether the kid has seen the earn-celebration yet.
+  // EARN only: whether the kid has seen the earn-celebration yet. Each step's
+  // EARN carries its own flag, so every approved step gets one celebration.
   celebrated Boolean   @default(false)
   createdAt DateTime   @default(now())
 
   kidId String
   kid   FamilyMember @relation(fields: [kidId], references: [id], onDelete: Cascade)
 
-  // Set for EARN entries so a target's reward is granted at most once per week.
+  // Set for EARN entries — which task this step belongs to.
   taskId String?
   task   Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
+  // Set for EARN entries: the approved step this award pays for. Unique, so a
+  // step is awarded at most once and its award is clawed back exactly on undo.
+  completionId String?     @unique
+  completion   Completion? @relation(fields: [completionId], references: [id], onDelete: Cascade)
+
   @@index([kidId, weekStart])
-  // One EARN per task/week (idempotent awards). NULL taskId (REDEEM/ADJUST) is
-  // treated as distinct by Postgres, so those remain unconstrained.
-  @@unique([kidId, weekStart, taskId])
+  @@index([kidId, weekStart, taskId])
 }
 
 // One row per celebration. `note` is the free-text reason (what it's for).

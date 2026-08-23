@@ -1,5 +1,13 @@
 import { prisma } from "@/lib/prisma";
-import { cappedGain, computeLeft, gainedFromTasks, tallyDots } from "@/lib/economy";
+import {
+  cappedGain,
+  computeLeft,
+  earnedForSteps,
+  gainedFromTasks,
+  isTargetMet,
+  stepAward,
+  tallyDots,
+} from "@/lib/economy";
 import {
   DEFAULT_TIME_ZONE,
   dayCellState,
@@ -100,9 +108,10 @@ async function assembleKidWeek(
       display: t.display === "TALLY" ? "tally" : "bar",
       target: t.targetCount,
       reward: t.rewardMins,
+      earnedMins: earnedForSteps(approved, t.targetCount, t.rewardMins),
       approved,
       pending,
-      earned: approved >= t.targetCount,
+      earned: isTargetMet(approved, t.targetCount),
       dots: tallyDots(capped, pending, t.targetCount),
       barPct: Math.round((capped / t.targetCount) * 100),
     };
@@ -230,7 +239,7 @@ export async function getFamilyOverview(): Promise<ProfileSummary[]> {
 }
 
 function historyText(type: string, minutes: number, taskTitle?: string | null): string {
-  if (type === "EARN") return `${taskTitle ?? "Task"} target`;
+  if (type === "EARN") return `${taskTitle ?? "Task"} step`;
   if (type === "REDEEM") return "Used screen time";
   return minutes >= 0 ? "Bonus minutes" : "Minutes removed";
 }
@@ -251,19 +260,38 @@ export async function getParentDeskView(): Promise<ParentDeskView> {
     orderBy: { order: "asc" },
   });
 
-  const pendings = await prisma.completion.findMany({
-    where: { weekStart: cws, status: "PENDING", kid: { role: "KID" } },
-    include: { task: true, kid: true },
-    orderBy: { createdAt: "asc" },
+  const [pendings, approvedCounts] = await Promise.all([
+    prisma.completion.findMany({
+      where: { weekStart: cws, status: "PENDING", kid: { role: "KID" } },
+      include: { task: true, kid: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    // Tasks belong to a single kid, so grouping by task alone is per-kid too.
+    prisma.completion.groupBy({
+      by: ["taskId"],
+      where: { weekStart: cws, status: "APPROVED", kid: { role: "KID" } },
+      _count: { _all: true },
+    }),
+  ]);
+
+  // What each approval is worth: a step's share depends on where it lands in the
+  // task, so queued items for the same task are ranked oldest-first behind the
+  // steps already approved.
+  const approvedByTask = new Map(approvedCounts.map((c) => [c.taskId, c._count._all]));
+  const queuedSoFar = new Map<string, number>();
+  const queue: QueueItem[] = pendings.map((p) => {
+    const ahead = queuedSoFar.get(p.taskId) ?? 0;
+    queuedSoFar.set(p.taskId, ahead + 1);
+    const rank = (approvedByTask.get(p.taskId) ?? 0) + ahead + 1;
+    return {
+      completionId: p.id,
+      kidId: p.kidId,
+      kidName: p.kid.name,
+      taskTitle: p.task.title,
+      kind: p.task.kind as TaskKind,
+      stepMins: stepAward(rank, p.task.targetCount, p.task.rewardMins),
+    };
   });
-  const queue: QueueItem[] = pendings.map((p) => ({
-    completionId: p.id,
-    kidId: p.kidId,
-    kidName: p.kid.name,
-    taskTitle: p.task.title,
-    kind: p.task.kind as TaskKind,
-    reward: p.task.rewardMins,
-  }));
 
   const kidSummaries = await Promise.all(
     kids.map(async (k) => {
@@ -281,6 +309,7 @@ export async function getParentDeskView(): Promise<ParentDeskView> {
           approved: t.approved,
           target: t.target,
           reward: t.reward,
+          earnedMins: t.earnedMins,
           earned: t.earned,
           barPct: t.barPct,
         })),

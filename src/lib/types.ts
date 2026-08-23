@@ -23,7 +23,8 @@ export interface TaskView {
   kind: TaskKind;
   display: TaskDisplay;
   target: number;
-  reward: number;
+  reward: number; // total minutes for the whole task
+  earnedMins: number; // minutes banked so far, one step at a time
   approved: number;
   pending: number;
   earned: boolean;
@@ -97,7 +98,7 @@ export interface QueueItem {
   kidName: string;
   taskTitle: string;
   kind: TaskKind;
-  reward: number;
+  stepMins: number; // minutes this one approval awards
 }
 
 export interface ParentTaskRow {
@@ -107,6 +108,7 @@ export interface ParentTaskRow {
   approved: number;
   target: number;
   reward: number;
+  earnedMins: number;
   earned: boolean;
   barPct: number;
 }

@@ -9,14 +9,33 @@ export function isTargetMet(approvedCount: number, target: number): boolean {
   return approvedCount >= target;
 }
 
-/** Minutes earned this week = Σ reward for tasks at or over their target. */
+/**
+ * Minutes banked for a task after `approved` steps — the reward split across the
+ * target rather than paid as a lump sum at the end. Rounded down mid-task and
+ * clamped to the target, so the total at target is exactly `reward` and steps
+ * logged beyond it earn nothing.
+ */
+export function earnedForSteps(approved: number, target: number, reward: number): number {
+  if (target <= 0) return 0;
+  const done = Math.min(Math.max(approved, 0), target);
+  return Math.floor((reward * done) / target);
+}
+
+/**
+ * Minutes the nth (1-indexed) approved step awards. Since it's the difference
+ * between two `earnedForSteps` values, any rounding remainder lands on the final
+ * step and the steps always sum to the full reward.
+ */
+export function stepAward(n: number, target: number, reward: number): number {
+  if (n < 1 || n > target) return 0;
+  return earnedForSteps(n, target, reward) - earnedForSteps(n - 1, target, reward);
+}
+
+/** Minutes earned this week = Σ each task's pro-rata earnings so far. */
 export function gainedFromTasks(
   tasks: Array<{ approved: number; target: number; reward: number }>,
 ): number {
-  return tasks.reduce(
-    (sum, t) => (isTargetMet(t.approved, t.target) ? sum + t.reward : sum),
-    0,
-  );
+  return tasks.reduce((sum, t) => sum + earnedForSteps(t.approved, t.target, t.reward), 0);
 }
 
 /**
@@ -64,23 +83,26 @@ export function canRedeem(balanceMins: number, amountMins: number): boolean {
   return amountMins > 0 && amountMins <= balanceMins;
 }
 
-export interface AwardCandidate {
+/** One step's EARN: the completion that triggered it and what it's worth. */
+export interface StepAward {
+  completionId: string;
   taskId: string;
-  approvedCount: number;
-  target: number;
-  rewardMins: number;
+  minutes: number;
 }
 
 /**
- * Tasks that have met their weekly target but have not yet been awarded.
- * Drives idempotent EARN creation — pass the set of task ids already awarded
- * this week so a reward is never granted twice.
+ * The EARN entries a task's approved steps should have, given its completion ids
+ * in approval order. Steps past the target are dropped (they earn nothing), so
+ * this is the full desired state — reconcile the stored entries against it to
+ * award new steps and claw back withdrawn ones.
  */
-export function tasksToAward(
-  candidates: AwardCandidate[],
-  awardedTaskIds: Set<string>,
-): AwardCandidate[] {
-  return candidates.filter(
-    (c) => isTargetMet(c.approvedCount, c.target) && !awardedTaskIds.has(c.taskId),
-  );
+export function plannedAwards(
+  task: { taskId: string; target: number; reward: number },
+  approvedCompletionIds: string[],
+): StepAward[] {
+  return approvedCompletionIds.slice(0, Math.max(task.target, 0)).map((completionId, i) => ({
+    completionId,
+    taskId: task.taskId,
+    minutes: stepAward(i + 1, task.target, task.reward),
+  }));
 }

@@ -160,7 +160,9 @@ function QueueRow({
           {item.kidName} · {item.taskTitle}
         </div>
         <div className="font-meta text-[12.5px] font-bold text-muted">
-          +{item.reward} mins when finished
+          {item.stepMins > 0
+            ? `+${item.stepMins} mins for this step`
+            : "target already met · no extra mins"}
         </div>
       </div>
       <button
@@ -222,7 +224,11 @@ function KidSummary({
               <div className="mb-[3px] flex justify-between font-meta text-[12.5px] font-bold text-[#6B665D]">
                 <span>{t.title}</span>
                 <span className={t.earned ? "text-success" : "text-faint"}>
-                  {t.earned ? `✓ +${t.reward}` : `${t.approved}/${t.target}`}
+                  {t.earned
+                    ? `✓ +${t.reward}`
+                    : t.earnedMins > 0
+                      ? `${t.approved}/${t.target} · +${t.earnedMins}`
+                      : `${t.approved}/${t.target}`}
                 </span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-track">

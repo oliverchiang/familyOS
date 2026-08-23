@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { tasksToAward } from "../src/lib/economy";
+import { plannedAwards } from "../src/lib/economy";
 import { weekStartISO } from "../src/lib/week";
 
 // Seeds the single family + this week's and last week's state.
@@ -52,22 +52,28 @@ async function logs(
   });
 }
 
-/** Create celebrated EARN entries for any met targets that week (seed-only). */
+/** Create celebrated per-step EARN entries for that week's approved steps. */
 async function awardWeek(kidId: string, weekStart: string, createdAt?: Date) {
   const tasks = await prisma.task.findMany({ where: { kidId, active: true } });
-  const counts = await prisma.completion.groupBy({
-    by: ["taskId"],
+  const approved = await prisma.completion.findMany({
     where: { kidId, weekStart, status: "APPROVED" },
-    _count: { _all: true },
+    select: { id: true, taskId: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
-  const cmap = new Map(counts.map((c) => [c.taskId, c._count._all]));
-  const toAward = tasksToAward(
-    tasks.map((t) => ({ taskId: t.id, approvedCount: cmap.get(t.id) ?? 0, target: t.targetCount, rewardMins: t.rewardMins })),
-    new Set(),
-  );
-  if (toAward.length > 0) {
+  const stepsByTask = new Map<string, string[]>();
+  for (const c of approved) {
+    const steps = stepsByTask.get(c.taskId);
+    if (steps) steps.push(c.id);
+    else stepsByTask.set(c.taskId, [c.id]);
+  }
+  const awards = tasks
+    .flatMap((t) =>
+      plannedAwards({ taskId: t.id, target: t.targetCount, reward: t.rewardMins }, stepsByTask.get(t.id) ?? []),
+    )
+    .filter((a) => a.minutes > 0);
+  if (awards.length > 0) {
     await prisma.ledgerEntry.createMany({
-      data: toAward.map((t) => ({ kidId, weekStart, type: "EARN" as const, minutes: t.rewardMins, taskId: t.taskId, note: "Weekly target met", celebrated: true, ...(createdAt ? { createdAt } : {}) })),
+      data: awards.map((a) => ({ kidId, weekStart, type: "EARN" as const, minutes: a.minutes, taskId: a.taskId, completionId: a.completionId, note: "Step done", celebrated: true, ...(createdAt ? { createdAt } : {}) })),
       skipDuplicates: true,
     });
   }

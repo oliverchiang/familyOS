@@ -51,7 +51,7 @@ export async function logCompletion(taskId: string, weekStart?: string): Promise
   revalidateAll(task.kidId);
 }
 
-/** Parent approves one pending completion; may cross a target and award minutes. */
+/** Parent approves one pending step — awards its share of the task's reward. */
 export async function approveCompletion(completionId: string): Promise<void> {
   await requireParent();
   const completion = await prisma.completion.findUnique({ where: { id: completionId } });
@@ -62,7 +62,7 @@ export async function approveCompletion(completionId: string): Promise<void> {
     data: { status: "APPROVED", approvedAt: new Date() },
   });
 
-  // Awards the reward once if this crossed the weekly target (celebration unseen).
+  // Awards this step its share of the task's reward (celebration unseen).
   await syncAwards(completion.kidId, completion.weekStart, { celebrated: false });
   revalidateAll(completion.kidId);
 }
@@ -70,8 +70,7 @@ export async function approveCompletion(completionId: string): Promise<void> {
 /**
  * Parent undoes an approval given by mistake: the completion is discarded
  * (REJECTED) so it disappears from the kid's view rather than lingering as a
- * "checking" item, and any reward it triggered is clawed back if the task now
- * falls below its weekly target.
+ * "checking" item, and the minutes that step earned are clawed back.
  */
 export async function unapproveCompletion(completionId: string): Promise<void> {
   await requireParent();

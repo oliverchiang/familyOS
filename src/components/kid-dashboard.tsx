@@ -418,13 +418,20 @@ function TaskRow({
         +{task.reward}
       </span>
     );
-  } else if (!view.isPast && task.pending > 0) {
+  } else if (view.isPast) {
+    // Part-done weeks still paid out step by step, so show what was banked.
+    action = (
+      <span className="shrink-0 font-meta text-xs font-extrabold text-faint">
+        {task.earnedMins > 0 ? `+${task.earnedMins} of ${task.reward}` : "not started"}
+      </span>
+    );
+  } else if (task.pending > 0) {
     action = (
       <span className="shrink-0 whitespace-nowrap rounded-full bg-accent-tint px-[11px] py-1.5 font-meta text-xs font-extrabold text-accent">
         checking
       </span>
     );
-  } else if (!view.isPast) {
+  } else {
     action = (
       <button
         type="button"
@@ -434,13 +441,15 @@ function TaskRow({
         I did it
       </button>
     );
-  } else if (view.isPast) {
-    action = (
-      <span className="shrink-0 font-meta text-xs font-extrabold text-faint">
-        not finished
-      </span>
-    );
   }
+
+  // Every approved step pays, so an unfinished task still has minutes banked.
+  const banked =
+    !task.earned && !view.isPast && task.earnedMins > 0 ? (
+      <span className="shrink-0 font-meta text-[12.5px] font-extrabold text-success">
+        +{task.earnedMins}
+      </span>
+    ) : null;
 
   return (
     <div className="flex items-center gap-3.5 border-b border-hairline py-[17px]">
@@ -479,6 +488,7 @@ function TaskRow({
           </div>
         )}
       </div>
+      {banked}
       {action}
     </div>
   );
